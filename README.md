@@ -13,22 +13,25 @@ photo into a real machine coordinate. Finding a workpiece is just a matter of co
 the current photo against a saved "empty bed" reference - wherever they differ is where
 something got placed.
 
-From there:
-- Upload an **SVG** and it gets centered, rotated to match the piece's angle, and
-  clipped to fit inside the outline, ready to open in LightBurn.
-- Upload a **photo** and the background gets stripped automatically, then it's rotated
-  to match the piece before export (as a plain PNG, since raster laser software doesn't
-  rotate jobs on its own - the target position gets printed out so you know where to
-  jog it).
+- Detects a workpiece's actual outline (not just a bounding box) via background
+  subtraction against a saved reference photo of the empty bed.
+- Aligns an uploaded **SVG** (vector design) to the detected outline: centered, rotated
+  to match, and clipped to fit - exported ready to open in LightBurn.
+- Aligns an uploaded **photo**: background removed automatically, rotated to match the
+  workpiece's orientation, exported as a plain PNG (with the target position reported),
+  since raster laser software burns images axis-aligned with no rotation of its own.
+- Optional direct GRBL connection for jogging/calibration convenience (never for running
+  burn jobs - that stays in LightBurn/LaserGRBL).
+- Optional RF-DETR-based detection as a trained-model alternative to the classical
+  background-subtraction method, once enough samples are collected through the app's own
+  data-collection page.
 
-There's also an optional direct GRBL connection for jogging around during calibration,
-and an optional RF-DETR model you can train on your own collected samples if the
-classical detection ever isn't robust enough for your setup.
-
-One thing this does **not** do: run the actual burn. That stays in LightBurn or
-LaserGRBL - this just gets the design lined up and hands off a ready-to-run file.
-Rebuilding a whole G-code engine (power curves, raster DPI, safety limits, all of it)
-wasn't worth it when LightBurn already does that well.
+This deliberately does **not** generate G-code or run burn jobs itself - it exports a
+ready-to-run file, and you open that in LightBurn or LaserGRBL to actually fire the
+laser. Rebuilding a whole G-code engine (power curves, raster DPI, safety limits, all of
+it) wasn't worth it when LightBurn already does that well. See `context.md` for the full
+reasoning behind that split, along with every other architecture decision and bug fix
+made along the way.
 
 ## Hardware you'll need
 
