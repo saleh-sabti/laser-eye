@@ -1,5 +1,10 @@
 # laser-eye
 
+**Status: still an active prototype.** Built for and tested against my own machine/setup
+- calibration, detection, and export all work, but a real end-to-end burn with an
+exported file hasn't happened yet, and the RF-DETR training path is built but untrained.
+Expect rough edges. See `context.md` for exactly what's verified vs. still open.
+
 My Comgrow laser engraver has no idea what's on its bed. No camera, no sensors, nothing.
 So every time I wanted to engrave an oddly-shaped piece of wood, I'd end up manually
 jogging the head around and eyeballing the alignment. This fixes that: point a webcam at
