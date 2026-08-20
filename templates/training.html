@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Training Data</h1>
+
+<div class="card">
+  <h2>🧪 Collect samples for RF-DETR</h2>
+  <p>Each click saves the current photo plus the outline our classical detector finds for
+  it, as one labeled training sample - no manual drawing needed. Move the piece to a new
+  position/angle (or swap in a different piece) between clicks so the dataset covers a
+  variety of cases. Aim for at least 50-200 samples before training.</p>
+
+  <table>
+    <tr><th>Samples collected</th><td>{{ sample_count }}</td></tr>
+    <tr>
+      <th>RF-DETR model</th>
+      <td>{{ "Trained" if rfdetr_trained else "Not trained yet" }}
+        <span class="badge {{ 'ok' if rfdetr_trained else 'bad' }}">{{ 'OK' if rfdetr_trained else 'TODO' }}</span></td>
+    </tr>
+  </table>
+
+  <img id="training-preview" class="frame" src="{{ url_for('training_preview') }}?t={{ range(0,100000)|random }}">
+
+  <div class="btn-row">
+    <button type="button" class="btn" onclick="document.getElementById('training-preview').src='{{ url_for('training_preview') }}?t=' + Date.now()">🔄 Refresh photo</button>
+    <form method="post" action="{{ url_for('training_collect') }}">
+      <button type="submit" class="btn primary">📸 Save this as a training sample</button>
+    </form>
+  </div>
+  <p class="hint">Only click this when the green outline above actually looks correct -
+  a bad outline becomes a bad label, and the model will learn from it.</p>
+</div>
+{% endblock %}

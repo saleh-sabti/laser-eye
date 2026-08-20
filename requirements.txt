@@ -1,0 +1,14 @@
+flask>=3.0
+opencv-python>=4.9
+numpy>=1.26
+shapely>=2.0
+svgelements>=1.9
+pillow>=10.0
+rembg[cpu]>=2.0
+
+# Optional: only needed if you use the RF-DETR detection method (Settings ->
+# Detection method). Classical detection works without any of this.
+# torch needs the CUDA wheel index, so install it separately first:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu124
+# then:
+#   pip install rfdetr supervision

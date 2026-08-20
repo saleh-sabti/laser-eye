@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Settings</h1>
+
+<div class="card">
+  <h2>⚙️ Camera &amp; bed</h2>
+  <form method="post">
+    <label>Camera index
+      <input type="number" name="camera_index" value="{{ settings.camera_index }}" min="0">
+    </label>
+    <div class="btn-row">
+      <button type="button" class="btn" onclick="probe()">🔍 Scan for cameras</button>
+      <span id="probe-result" class="hint" style="align-self:center;"></span>
+    </div>
+
+    <label>Bed width (mm)
+      <input type="number" step="0.1" name="bed_width_mm" value="{{ settings.bed_width_mm }}">
+    </label>
+    <label>Bed height (mm)
+      <input type="number" step="0.1" name="bed_height_mm" value="{{ settings.bed_height_mm }}">
+    </label>
+    <button type="submit" class="btn primary">💾 Save settings</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>🧪 Detection method</h2>
+  <p>Classical works with zero training data and is what's validated right now. RF-DETR
+  needs a model trained on your own samples first (see the Training Data page) - if it's
+  not trained yet, the app automatically falls back to classical detection either way.</p>
+  <form method="post">
+    <label>Method
+      <select name="detection_method">
+        <option value="classical" {{ "selected" if settings.detection_method == "classical" }}>Classical (background subtraction)</option>
+        <option value="rfdetr" {{ "selected" if settings.detection_method == "rfdetr" }}>RF-DETR (trained model)</option>
+      </select>
+    </label>
+    <button type="submit" class="btn primary">💾 Save</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>🔌 GRBL connection</h2>
+  <p>Only used for jogging during calibration (see the Calibration page) - actual burn jobs
+  still run through LightBurn. Only one program can hold the serial port open at a time, so
+  disconnect here before using LightBurn, and vice versa.</p>
+  <form method="post">
+    <label>Serial port
+      <input type="text" name="grbl_port" value="{{ settings.grbl_port }}">
+    </label>
+    <label>Baud rate
+      <input type="number" name="grbl_baud" value="{{ settings.grbl_baud }}">
+    </label>
+    <button type="submit" class="btn primary">💾 Save</button>
+  </form>
+</div>
+
+<script>
+function probe() {
+  document.getElementById('probe-result').textContent = 'Scanning…';
+  fetch('{{ url_for("settings_probe") }}').then(r => r.json()).then(data => {
+    document.getElementById('probe-result').textContent =
+      data.devices.length ? ('Found: ' + data.devices.join(', ')) : 'No cameras found';
+  });
+}
+</script>
+{% endblock %}

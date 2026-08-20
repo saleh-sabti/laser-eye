@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Live View</h1>
+<div class="card">
+  <h2>📷 Camera feed</h2>
+  <p>Live feed with the detected outline (green) and centroid (red cross) overlaid, when
+  calibration and a reference frame are available.</p>
+  <img class="frame" src="{{ url_for('live_stream') }}">
+</div>
+{% endblock %}

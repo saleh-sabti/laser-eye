@@ -1,0 +1,107 @@
+"""Pixel <-> machine-mm calibration.
+
+The reference points come from the machine itself: the user jogs the laser
+(pointer / low power, in LightBurn) to a point, reads the real machine
+(X, Y) off LightBurn, clicks the matching spot in a captured photo of the
+bed, and enters the coordinates here. Four or more such (pixel, mm) pairs
+are enough to fit a homography that maps any pixel in later photos to a
+real machine position.
+"""
+import json
+import math
+from dataclasses import dataclass, asdict
+
+import cv2
+import numpy as np
+
+from .config import CALIBRATION_PATH
+
+MIN_POINTS = 4
+
+# Browsers commonly auto-refill number inputs with whatever was typed last,
+# so it's easy to click a new spot in the photo and forget to update the
+# machine X/Y fields before submitting - producing two different pixel
+# locations mapped to the same real-world point (or vice versa), which
+# silently corrupts the homography. These tolerances catch that mistake.
+DUPLICATE_PIXEL_TOLERANCE_PX = 3.0
+DUPLICATE_MM_TOLERANCE_MM = 0.5
+
+
+@dataclass
+class CalibrationPoint:
+    pixel_x: float
+    pixel_y: float
+    machine_x_mm: float
+    machine_y_mm: float
+
+
+class CalibrationError(ValueError):
+    pass
+
+
+def find_duplicate_conflict(points: list[CalibrationPoint], candidate: CalibrationPoint) -> str | None:
+    """Return a warning if `candidate` looks like an accidental duplicate
+    of an existing point - most commonly, a different pixel was clicked but
+    the machine X/Y fields still held the previous point's values.
+    """
+    for p in points:
+        pixel_dist = math.hypot(p.pixel_x - candidate.pixel_x, p.pixel_y - candidate.pixel_y)
+        mm_dist = math.hypot(p.machine_x_mm - candidate.machine_x_mm, p.machine_y_mm - candidate.machine_y_mm)
+        if mm_dist < DUPLICATE_MM_TOLERANCE_MM and pixel_dist > DUPLICATE_PIXEL_TOLERANCE_PX:
+            return (
+                f"Machine coordinates ({candidate.machine_x_mm}, {candidate.machine_y_mm}) mm "
+                "match a point already added, but you clicked a different spot in the photo - "
+                "looks like the Machine X/Y fields weren't updated for this new point."
+            )
+        if pixel_dist < DUPLICATE_PIXEL_TOLERANCE_PX and mm_dist > DUPLICATE_MM_TOLERANCE_MM:
+            return (
+                "That's essentially the same spot in the photo as a point you already added, "
+                "but with different machine coordinates - click a different spot."
+            )
+    return None
+
+
+def compute_homography(points: list[CalibrationPoint]) -> np.ndarray:
+    if len(points) < MIN_POINTS:
+        raise CalibrationError(
+            f"Need at least {MIN_POINTS} calibration points, got {len(points)}."
+        )
+    pixel_pts = np.array([[p.pixel_x, p.pixel_y] for p in points], dtype=np.float32)
+    mm_pts = np.array([[p.machine_x_mm, p.machine_y_mm] for p in points], dtype=np.float32)
+    homography, _ = cv2.findHomography(pixel_pts, mm_pts, method=0)
+    if homography is None:
+        raise CalibrationError(
+            "Could not fit a homography from these points - check they "
+            "aren't collinear or duplicated."
+        )
+    return homography
+
+
+def save_calibration(points: list[CalibrationPoint]) -> np.ndarray:
+    homography = compute_homography(points)
+    CALIBRATION_PATH.write_text(json.dumps({
+        "points": [asdict(p) for p in points],
+        "homography": homography.tolist(),
+    }, indent=2))
+    return homography
+
+
+def load_homography() -> np.ndarray | None:
+    if not CALIBRATION_PATH.exists():
+        return None
+    data = json.loads(CALIBRATION_PATH.read_text())
+    return np.array(data["homography"], dtype=np.float64)
+
+
+def load_calibration_points() -> list[CalibrationPoint]:
+    if not CALIBRATION_PATH.exists():
+        return []
+    data = json.loads(CALIBRATION_PATH.read_text())
+    return [CalibrationPoint(**p) for p in data["points"]]
+
+
+def pixels_to_mm(homography: np.ndarray, pixel_points: np.ndarray) -> np.ndarray:
+    """pixel_points: Nx2 array of (x, y) pixel coords -> Nx2 array of mm coords."""
+    pts = pixel_points.reshape(-1, 1, 2).astype(np.float32)
+    transformed = cv2.perspectiveTransform(pts, homography)
+    return transformed.reshape(-1, 2)

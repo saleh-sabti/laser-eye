@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Design &amp; Export</h1>
+
+<div class="card">
+  <h2>🎨 Upload a design</h2>
+  <p>Place the workpiece on the bed, then upload either:</p>
+  <ul>
+    <li><strong>An SVG</strong> (vector line art) — centered/rotated onto the detected
+      outline and clipped to it with a safety margin, ready for LightBurn.</li>
+    <li><strong>A photo</strong> (PNG/JPEG) — background removed locally, then rotated to
+      match the object's orientation and scaled to fit, baked into a plain PNG (since raster
+      laser software burns images axis-aligned with no absolute position of its own — see
+      the target position after aligning).</li>
+  </ul>
+
+  <form method="post" enctype="multipart/form-data">
+    <label>Design file <input type="file" name="design_file" accept=".svg,.png,.jpg,.jpeg" required></label>
+    <button type="submit" class="btn primary">🔎 Detect object &amp; align design</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>🖼️ Detection preview</h2>
+  <img class="frame" src="{{ url_for('design_preview') }}?t={{ range(0,100000)|random }}">
+</div>
+
+{% if last_export %}
+<div class="card">
+  <h2>📦 Export</h2>
+  {% if export_kind == "png" and placement %}
+  <p>Photo aligned as a plain PNG (rotation already baked in). Set your machine's job origin
+  to this target position before running it:</p>
+  <table>
+    <tr><th>Target center (mm)</th><td>X {{ placement.target_x_mm }}, Y {{ placement.target_y_mm }}</td></tr>
+    <tr><th>Object angle</th><td>{{ placement.angle_deg }}&deg; (already applied to the image)</td></tr>
+    <tr><th>Image size</th><td>{{ placement.width_mm }} &times; {{ placement.height_mm }} mm</td></tr>
+  </table>
+  <a class="btn primary" href="{{ url_for('design_export') }}">⬇️ Download aligned_design.png</a>
+  {% else %}
+  <p>Open the downloaded file in LightBurn and press Start as usual.</p>
+  <a class="btn primary" href="{{ url_for('design_export') }}">⬇️ Download aligned_design.svg</a>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

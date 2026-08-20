@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Dashboard</h1>
+
+<div class="card">
+  <h2>👋 Getting started</h2>
+  <p>Camera-guided auto-positioning for the Comgrow engraver. Connect a camera in
+  <a href="{{ url_for('settings_page') }}">Settings</a>, calibrate the pixel-to-mm mapping in
+  <a href="{{ url_for('calibration_page') }}">Calibration</a>, then use
+  <a href="{{ url_for('design_page') }}">Design &amp; Export</a> to align a design to whatever
+  is on the bed and export a file for LightBurn / LaserGRBL.</p>
+</div>
+
+<div class="card">
+  <h2>System status</h2>
+  <table>
+    <tr>
+      <th>Camera</th>
+      <td>{{ "Open (index " ~ settings.camera_index ~ ")" if camera_open else "Not detected" }}
+        <span class="badge {{ 'ok' if camera_open else 'bad' }}">{{ 'OK' if camera_open else 'CHECK' }}</span></td>
+    </tr>
+    <tr><th>Bed size</th><td>{{ settings.bed_width_mm }} &times; {{ settings.bed_height_mm }} mm</td></tr>
+    <tr>
+      <th>Calibration</th>
+      <td>{{ "Saved" if has_calibration else "Not calibrated" }}
+        <span class="badge {{ 'ok' if has_calibration else 'bad' }}">{{ 'OK' if has_calibration else 'TODO' }}</span></td>
+    </tr>
+    <tr>
+      <th>Empty-bed reference</th>
+      <td>{{ "Captured" if has_reference else "Not captured" }}
+        <span class="badge {{ 'ok' if has_reference else 'bad' }}">{{ 'OK' if has_reference else 'TODO' }}</span></td>
+    </tr>
+  </table>
+</div>
+{% endblock %}
