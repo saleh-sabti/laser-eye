@@ -6,6 +6,14 @@ jogging the head around and eyeballing the alignment. This fixes that: point a w
 the bed, and it figures out where your workpiece actually is - the real outline, not
 just a rough box - and lines your design up automatically.
 
+![Detecting an irregular piece the moment it's placed on the bed](docs/demo.gif)
+
+*Placing a piece by hand - the outline locks onto it live, no manual jogging.*
+
+![Design & Export page](docs/design-export.png)
+
+*Detected outline shown before you commit to exporting anything.*
+
 ## How it works
 
 A camera sits fixed above the bed. Once it's calibrated, it can turn any pixel in a
