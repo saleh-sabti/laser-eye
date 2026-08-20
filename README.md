@@ -62,6 +62,19 @@ RF-DETR needs its own CUDA-matched PyTorch install if you want to use it - see
 - `context.md` - the long version: every decision made building this and why, plus the
   real bugs hit along the way
 
+## Safety
+
+This controls a real laser and a real motorized machine. The direct GRBL connection
+(used only for jogging during calibration) forces the laser off whenever it's active,
+and never sends a fire command under any circumstance - but it does physically move the
+machine, including toward its limit switches. Watch the machine while jogging, don't
+leave it running unattended, and treat this like any other piece of code driving
+hardware: read it before you run it, and don't trust it blindly. Use at your own risk.
+
+## License
+
+MIT - see `LICENSE`.
+
 ---
 
 Made by [saleh-sabti](https://github.com/saleh-sabti)
