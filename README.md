@@ -97,6 +97,12 @@ diff outside the working area before Otsu/contours ever run - the frame/cables c
 legitimately have a workpiece on them, so excluding them is correct, not a tuning
 compromise.
 
+![Bed ROI (green dashed box) excluding the machine frame, cables, and belt track, with a real workpiece and two ArUco markers inside it](docs/calibration-bed-roi.jpg)
+
+*The two-click ROI picker in practice - only the dashed box is ever searched for a
+workpiece, so the frame/cables/belt track outside it can't produce false detections no
+matter how noisy they get.*
+
 **The ROI fix itself had two bugs, found from real screenshots after use.**
 Problem 1: zero-padding outside the ROI before running Otsu skewed its histogram badly -
 measured 13-14 on the ROI alone vs. 7 after zero-padding, low enough that ordinary sensor
@@ -183,6 +189,11 @@ existed but was only wired into the manual-entry route, not the newer ArUco one.
 Decision: move the check into `compute_homography()` itself so every entry path -
 manual, ArUco, anything added later - is protected by the same code, not by each route
 remembering to call it.
+
+![Live View showing a correctly detected outline, centroid, and a real "170 x 62 mm" dimension label](docs/live-view-dimension-detection.jpg)
+
+*Live detection today, after both calibration bugs above - a real dimension label
+instead of "0 x 0mm" or six-figure nonsense, on a real piece.*
 
 ## Hardware you'll need
 
