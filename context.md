@@ -350,6 +350,23 @@ gantry is still invisible regardless of how calibration was obtained. That's sti
 "park the gantry off the bed before capturing" procedural fix, not something either
 calibration method touches.
 
+**Real bug found in the ArUco flow's first real use (2026-08-22)**: `Detection.length_mm`/
+`width_mm` came back "0 x 0mm" on real hardware. Traced it to the homography itself being
+degenerate - two of the four calibration points (produced via ArUco auto-calibrate) had
+*identical* machine coordinates (370, 0mm) from different pixel locations (a marker's
+registered position was mistyped/duplicated), which collapsed an entire row of the fitted
+matrix to ~0 - every point mapped to Y=0 regardless of input. The outline itself still
+looked correct on screen (`draw_overlay()` draws raw pixel coordinates, unaffected), which
+made this look like a cosmetic dimension-label bug at first - it wasn't. With the mapping
+broken like this, actual design alignment/export would have been silently wrong too, not
+just the label. Root cause: `find_duplicate_conflict()` (the check that would have caught
+this) was only ever wired into the manual point-entry route - the newer ArUco registration
+route (`/calibration/aruco/register`) had no equivalent check. Fixed by moving the
+duplicate-detection logic directly into `calibration.compute_homography()` itself instead
+of each UI entry point re-implementing it - protects every current and future calibration
+path (manual, ArUco, anything else) uniformly. Verified it catches the exact bad point
+pair that caused this.
+
 ## UI
 
 Redesigned from bare default-browser-styled HTML into a proper design system on request

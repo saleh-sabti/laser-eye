@@ -90,6 +90,31 @@ def compute_homography(
             f"or the mapping will extrapolate badly for anything outside where you clicked."
         )
 
+    # Checked here, not just in find_duplicate_conflict()'s live UI check,
+    # so *every* entry path is protected the same way - this was missed for
+    # ArUco marker registration (no per-marker duplicate check existed
+    # there) and produced a real degenerate homography in practice: two
+    # markers both registered at (370, 0)mm collapsed an entire axis of the
+    # fitted matrix to ~0, so every detection mapped to Y=0 regardless of
+    # input (dimensions came out "0 x 0mm", and actual alignment/export
+    # would have been wrong too, not just the dimension label).
+    for i in range(len(points)):
+        for j in range(i + 1, len(points)):
+            mm_dist = math.hypot(
+                points[i].machine_x_mm - points[j].machine_x_mm,
+                points[i].machine_y_mm - points[j].machine_y_mm,
+            )
+            pixel_dist = math.hypot(
+                points[i].pixel_x - points[j].pixel_x, points[i].pixel_y - points[j].pixel_y
+            )
+            if mm_dist < DUPLICATE_MM_TOLERANCE_MM and pixel_dist > DUPLICATE_PIXEL_TOLERANCE_PX:
+                raise CalibrationError(
+                    f"Points {i + 1} and {j + 1} both have machine position "
+                    f"({points[i].machine_x_mm}, {points[i].machine_y_mm}) mm but different "
+                    f"pixel locations - one was entered wrong (this always breaks the "
+                    f"mapping). Fix or remove one before saving."
+                )
+
     pixel_pts = np.array([[p.pixel_x, p.pixel_y] for p in points], dtype=np.float32)
     mm_pts = np.array([[p.machine_x_mm, p.machine_y_mm] for p in points], dtype=np.float32)
     homography, _ = cv2.findHomography(pixel_pts, mm_pts, method=0)
