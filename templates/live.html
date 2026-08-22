@@ -1,6 +1,17 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Live View</h1>
+
+<div class="card">
+  <h2>🪵 Empty-bed reference frame</h2>
+  <p>Do this first, every time - captured: {{ "yes" if has_reference else "no" }}. Needed
+  by detection (background subtraction). Clear the bed completely (including any leftover
+  scraps), make sure the lighting is however you'll actually be working, then capture.</p>
+  <form method="post" action="{{ url_for('calibration_capture_reference') }}">
+    <button type="submit" class="btn primary">📸 Capture reference frame now</button>
+  </form>
+</div>
+
 <div class="card">
   <h2>📷 Camera feed</h2>
   <p>Live feed with the detected outline (green) and centroid (red cross) overlaid, when

@@ -352,7 +352,7 @@ def grbl_position():
 
 @app.route("/live")
 def live_page():
-    return render_template("live.html")
+    return render_template("live.html", has_reference=detection.has_reference_frame())
 
 
 @app.route("/training")

@@ -3,62 +3,55 @@
 <h1>Calibration</h1>
 
 <div class="card">
-  <h2>🪵 Empty-bed reference frame</h2>
-  <p>Do this first, every time - captured: {{ "yes" if has_reference else "no" }}. Needed
-  by detection (background subtraction). Clear the bed completely (including any leftover
-  scraps), make sure the lighting is however you'll actually be working, then capture.</p>
-  <form method="post" action="{{ url_for('calibration_capture_reference') }}">
-    <button type="submit" class="btn primary">📸 Capture reference frame now</button>
-  </form>
-</div>
-
-<div class="card">
   <h2>🏷️ Automatic calibration (ArUco markers)</h2>
-  <p>Print these 4 markers and fix them <strong>permanently</strong> somewhere the camera
-  can always see, but a workpiece never covers - taped/screwed to the bed frame corners
-  works well. Register each one's real machine position <strong>once, ever</strong> (same
-  jog-and-enter-X/Y idea as a manual point below) - after that, recalibrating is one click:
-  no more clicking through 4+ points every time, and it doubles as a quick fix if the
-  camera ever gets bumped slightly, since you can just re-run it.</p>
 
-  <div class="btn-row">
-    {% for i in range(4) %}
-    <div style="text-align:center;">
-      <img src="{{ url_for('aruco_marker_image', marker_id=i) }}" style="width:90px; height:90px; border:1px solid var(--border); background:white;">
-      <div class="hint">ID {{ i }} - <a href="{{ url_for('aruco_marker_image', marker_id=i) }}" download="marker_{{ i }}.png">download</a></div>
+  <details {{ "open" if aruco_markers|length < aruco_min_required }}>
+    <summary style="cursor:pointer; font-weight:600;">Setup &amp; marker registry ({{ aruco_markers|length }}/{{ aruco_min_required }} registered)</summary>
+
+    <p>Print these 4 markers and fix them <strong>permanently</strong> somewhere the camera
+    can always see, but a workpiece never covers - taped/screwed to the bed frame corners
+    works well. Register each one's real machine position <strong>once, ever</strong> (same
+    jog-and-enter-X/Y idea as a manual point below) - after that, recalibrating is one click.</p>
+
+    <div class="btn-row">
+      {% for i in range(4) %}
+      <div style="text-align:center;">
+        <img src="{{ url_for('aruco_marker_image', marker_id=i) }}" style="width:90px; height:90px; border:1px solid var(--border); background:white;">
+        <div class="hint">ID {{ i }} - <a href="{{ url_for('aruco_marker_image', marker_id=i) }}" download="marker_{{ i }}.png">download</a></div>
+      </div>
+      {% endfor %}
     </div>
-    {% endfor %}
-  </div>
 
-  <table>
-    <tr><th>Marker ID</th><th>Registered position (mm)</th><th></th></tr>
-    {% for i in range(4) %}
-    <tr>
-      <td>{{ i }}</td>
-      <td>{{ aruco_markers[i][0] ~ ", " ~ aruco_markers[i][1] if i in aruco_markers else "not registered" }}</td>
-      <td>
-        {% if i in aruco_markers %}
-        <form method="post" action="{{ url_for('aruco_remove', marker_id=i) }}" style="display:inline;">
-          <button type="submit" class="btn" style="margin:0;">Remove</button>
-        </form>
-        {% endif %}
-      </td>
-    </tr>
-    {% endfor %}
-  </table>
+    <table>
+      <tr><th>Marker ID</th><th>Registered position (mm)</th><th></th></tr>
+      {% for i in range(4) %}
+      <tr>
+        <td>{{ i }}</td>
+        <td>{{ aruco_markers[i][0] ~ ", " ~ aruco_markers[i][1] if i in aruco_markers else "not registered" }}</td>
+        <td>
+          {% if i in aruco_markers %}
+          <form method="post" action="{{ url_for('aruco_remove', marker_id=i) }}" style="display:inline;">
+            <button type="submit" class="btn" style="margin:0;">Remove</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
 
-  <form method="post" action="{{ url_for('aruco_register') }}">
-    <div class="btn-row" style="align-items:center;">
-      <label style="margin:0;">Marker ID
-        <select name="marker_id" style="width:70px;">
-          {% for i in range(4) %}<option value="{{ i }}">{{ i }}</option>{% endfor %}
-        </select>
-      </label>
-      <label style="margin:0;">Machine X (mm) <input type="number" step="0.01" name="machine_x_mm" style="width:100px;" required></label>
-      <label style="margin:0;">Machine Y (mm) <input type="number" step="0.01" name="machine_y_mm" style="width:100px;" required></label>
-      <button type="submit" class="btn" style="margin:0;">Register</button>
-    </div>
-  </form>
+    <form method="post" action="{{ url_for('aruco_register') }}">
+      <div class="btn-row" style="align-items:center;">
+        <label style="margin:0;">Marker ID
+          <select name="marker_id" style="width:70px;">
+            {% for i in range(4) %}<option value="{{ i }}">{{ i }}</option>{% endfor %}
+          </select>
+        </label>
+        <label style="margin:0;">Machine X (mm) <input type="number" step="0.01" name="machine_x_mm" style="width:100px;" required></label>
+        <label style="margin:0;">Machine Y (mm) <input type="number" step="0.01" name="machine_y_mm" style="width:100px;" required></label>
+        <button type="submit" class="btn" style="margin:0;">Register</button>
+      </div>
+    </form>
+  </details>
 
   <div class="btn-row">
     <form method="post" action="{{ url_for('aruco_calibrate_now') }}">
