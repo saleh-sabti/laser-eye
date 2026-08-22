@@ -115,6 +115,12 @@ for images -> `export.write_svg()` / `photo_align.save_png()`.
   will crash the Flask request uncaught. `GrblAlarmError` (a limit switch trip) is
   handled distinctly from other errors throughout, since recovering from it needs a
   specific user action (`unlock()`/`home()`), not just retrying.
+- **`aruco_calibration.py`** - alternative to clicking 4+ manual points every time:
+  markers fixed permanently outside the work area get their machine position registered
+  once, then `auto_calibrate()` detects whichever are currently visible and feeds them
+  into `calibration.save_calibration()` directly - same function manual calibration uses,
+  so the spread-check guard and output format are identical either way; nothing else in
+  the app needs to know or care which method produced a given `calibration.json`.
 - **`app.py`** - module-level globals (`_camera`, `_grbl`, `_pending_points`,
   `_last_export_path`) hold state across requests, since this is a single-user local tool
   with no session/database layer. `_grbl_call()` is the shared error-handling wrapper for

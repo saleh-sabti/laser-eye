@@ -12,11 +12,12 @@ from pathlib import Path
 import cv2
 from flask import Flask, Response, render_template, request, redirect, url_for, send_file, flash, jsonify
 
-from laser_align import config, calibration, detection, align, export, photo_align, dataset, rfdetr_detect, grbl
+from laser_align import config, calibration, detection, align, export, photo_align, dataset, rfdetr_detect, grbl, aruco_calibration
 from laser_align.camera import Camera, probe_devices
 from laser_align.calibration import CalibrationPoint, CalibrationError
 from laser_align.detection import NoReferenceFrameError, NoObjectFoundError
 from laser_align.grbl import Grbl, GrblError, GrblAlarmError
+from laser_align.aruco_calibration import NoMarkersConfiguredError, NotEnoughMarkersDetectedError
 
 app = Flask(__name__)
 app.secret_key = "laser-auto-align-local"  # local-only tool, no real auth surface
@@ -119,6 +120,8 @@ def calibration_page():
         min_points=calibration.MIN_POINTS,
         has_reference=detection.has_reference_frame(),
         settings=config.load_settings(),
+        aruco_markers=aruco_calibration.load_marker_positions(),
+        aruco_min_required=aruco_calibration.MIN_MARKERS_REQUIRED,
     )
 
 
@@ -183,6 +186,46 @@ def calibration_save():
 def calibration_capture_reference():
     detection.save_reference_frame(get_camera().read())
     flash("Empty-bed reference frame captured.")
+    return redirect(url_for("calibration_page"))
+
+
+@app.route("/calibration/aruco/marker/<int:marker_id>.png")
+def aruco_marker_image(marker_id):
+    img = aruco_calibration.generate_marker_image(marker_id)
+    ok, buf = cv2.imencode(".png", img)
+    return Response(buf.tobytes(), mimetype="image/png")
+
+
+@app.route("/calibration/aruco/register", methods=["POST"])
+def aruco_register():
+    try:
+        marker_id = int(request.form["marker_id"])
+        x = float(request.form["machine_x_mm"])
+        y = float(request.form["machine_y_mm"])
+    except (KeyError, ValueError):
+        flash("Enter a marker ID and its machine X/Y before registering.")
+        return redirect(url_for("calibration_page"))
+    aruco_calibration.save_marker_position(marker_id, x, y)
+    flash(f"Marker {marker_id} registered at ({x}, {y}) mm.")
+    return redirect(url_for("calibration_page"))
+
+
+@app.route("/calibration/aruco/remove/<int:marker_id>", methods=["POST"])
+def aruco_remove(marker_id):
+    aruco_calibration.remove_marker_position(marker_id)
+    flash(f"Marker {marker_id} removed.")
+    return redirect(url_for("calibration_page"))
+
+
+@app.route("/calibration/aruco/calibrate_now", methods=["POST"])
+def aruco_calibrate_now():
+    settings = config.load_settings()
+    frame = get_camera().read()
+    try:
+        aruco_calibration.auto_calibrate(frame, settings["camera_width"], settings["camera_height"])
+        flash("Auto-calibrated from markers.")
+    except (NoMarkersConfiguredError, NotEnoughMarkersDetectedError, CalibrationError) as e:
+        flash(f"Auto-calibration failed: {e}")
     return redirect(url_for("calibration_page"))
 
 

@@ -321,6 +321,35 @@ should either monkeypatch those paths to an isolated temp directory first, or op
 in-memory objects only (as the later, corrected tests did) - never write through the
 real config paths.
 
+## Automatic calibration via ArUco markers (`laser_align/aruco_calibration.py`)
+
+Added 2026-08-22 after the user asked for calibration to stop being manual/repetitive -
+this was the plan sketched in the very first session (see the "Big architecture
+decisions" section above) finally built. Four `cv2.aruco` markers (`DICT_4X4_50`) get
+printed and fixed *permanently* somewhere the camera can always see but a workpiece never
+covers (e.g. taped to the bed frame corners). Each marker's real machine position is
+registered once, ever, through the same jog-and-enter-X/Y idea as manual points -
+`aruco_markers.json` stores `{marker_id: [mm_x, mm_y]}`. After that, "Calibrate now"
+detects whichever registered markers are currently visible and feeds them straight into
+`calibration.save_calibration()` - the *exact same* function manual calibration uses, so
+the automatic spread-check guard (points can't be clustered in one area) applies here for
+free, and the result is an ordinary `calibration.json` the rest of the app can't tell was
+auto-generated. Verified the full pipeline (generate markers -> detect them in a synthetic
+photo -> match against registered positions -> fit homography -> confirm a known point
+reprojects correctly) in isolation before wiring into the UI.
+
+This also incidentally fixes the project's oldest standing fragility - "the camera must
+never move or the whole calibration breaks" - since re-running takes one click instead of
+redoing 4+ manual points, it's now cheap enough to treat as routine maintenance instead of
+a disaster to avoid.
+
+**Not yet addressed**: the earlier gantry-occlusion problem (the machine physically
+blocking part of the workpiece from camera view) is unrelated to this - markers fixed
+outside the working area are unaffected by gantry position, but a workpiece under the
+gantry is still invisible regardless of how calibration was obtained. That's still a
+"park the gantry off the bed before capturing" procedural fix, not something either
+calibration method touches.
+
 ## UI
 
 Redesigned from bare default-browser-styled HTML into a proper design system on request
