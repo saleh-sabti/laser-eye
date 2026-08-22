@@ -1,0 +1,8 @@
+Fraunces (fraunces-normal.woff2, fraunces-italic.woff2) - designed by Undercase Type,
+distributed under the SIL Open Font License 1.1. https://github.com/undercasetype/Fraunces
+
+Work Sans (worksans-normal.woff2, worksans-italic.woff2) - designed by Wei Huang,
+distributed under the SIL Open Font License 1.1. https://github.com/weiweihuanghuang/Work-Sans
+
+Both fetched from Google Fonts and self-hosted here so the app keeps working with no
+internet connection at the workbench - see CLAUDE.md.
