@@ -158,6 +158,28 @@ alone: rejects a save if either pixel axis spans less than 35% of the frame dime
 whole bed. Verified it actually catches the exact bad calibration that caused this.
 **The user needs to redo calibration again** - the bad one was cleared.
 
+**Camera resolution (2026-08-22)**: the app had been running at 640x480 the entire
+project - OpenCV/DSHOW default to that unless a higher resolution is explicitly
+requested, and nothing ever did. Checked the actual hardware directly
+(`cap.set(CAP_PROP_FRAME_WIDTH/HEIGHT)`) and confirmed the user's camera supports up to
+1920x1080. That's the single biggest precision lever available - roughly 3x finer
+resolution (≈0.63mm/px down to ≈0.21mm/px on a 400mm bed) for free, no algorithm changes
+needed. Wired it through as a proper setting (`camera_width`/`camera_height` in
+`config.py`, a resolution picker on the Settings page) rather than just hardcoding a
+higher default, because raising it invalidates any saved calibration/bed-ROI (both are
+pixel coordinates tied to whatever resolution they were captured at) - `settings_page()`
+now detects a resolution change and deliberately clears both rather than leaving them
+silently misaligned. Also had to make `detection.py`'s object-size floor
+resolution-independent (`MIN_OBJECT_AREA_FRACTION`, a fraction of frame area, instead of
+the old hardcoded `MIN_OBJECT_AREA_PX` tuned only for 640x480) - an absolute pixel count
+does not carry over to a different resolution, since the same physical object covers
+proportionally more pixels at a higher resolution. **Not yet re-verified**: the
+blur/morphology kernel sizes in `detection.py` (3x3) and the noise-rejection thresholds
+(`MIN_MEAN_DIFF_INSIDE`, `MIN_SOLIDITY`) were empirically tuned at 640x480 against real
+footage - they're likely still fine at higher resolution (kernels get proportionally
+smaller relative to any given object, if anything more precision-preserving) but haven't
+been re-validated against real noise footage at 1080p the way the original values were.
+
 ## Alignment & export (`laser_align/align.py`, `export.py`, `photo_align.py`)
 
 Two input types, handled differently:

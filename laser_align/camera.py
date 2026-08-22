@@ -43,11 +43,25 @@ def probe_devices(max_index: int = 5) -> list[int]:
 
 
 class Camera:
-    def __init__(self, index: int):
+    def __init__(self, index: int, width: int = 640, height: int = 480):
         self.index = index
+        self.width = width
+        self.height = height
         self._lock = threading.RLock()
         self._cap = cv2.VideoCapture(index, cv2.CAP_DSHOW)
+        self._apply_resolution()
         self._dead_frame_streak = 0
+
+    def _apply_resolution(self) -> None:
+        # OpenCV/DSHOW default to 640x480 unless a higher resolution is
+        # explicitly requested - most webcams support far more (this
+        # project's actually supports up to 1920x1080). Setting these on an
+        # unopened/failed capture is harmless; a genuinely unsupported
+        # value just gets ignored by the driver and read() falls back to
+        # whatever the device actually delivers.
+        if self._cap.isOpened():
+            self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
+            self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
 
     def _ensure_open(self) -> None:
         # A device plugged in (or replugged) after this object was created
@@ -59,6 +73,7 @@ class Camera:
     def _reconnect(self) -> None:
         self._cap.release()
         self._cap = cv2.VideoCapture(self.index, cv2.CAP_DSHOW)
+        self._apply_resolution()
         self._dead_frame_streak = 0
 
     @property
@@ -94,13 +109,14 @@ class Camera:
             return frame
 
     def _placeholder_frame(self) -> np.ndarray:
-        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        frame = np.zeros((self.height, self.width, 3), dtype=np.uint8)
+        cx, cy = self.width // 2 - 180, self.height // 2
         cv2.putText(
-            frame, _NO_CAMERA_FRAME_TEXT, (60, 240),
+            frame, _NO_CAMERA_FRAME_TEXT, (cx, cy),
             cv2.FONT_HERSHEY_SIMPLEX, 1.0, (60, 60, 220), 2, cv2.LINE_AA,
         )
         cv2.putText(
-            frame, f"(index {self.index})", (60, 280),
+            frame, f"(index {self.index})", (cx, cy + 40),
             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (120, 120, 120), 1, cv2.LINE_AA,
         )
         return frame

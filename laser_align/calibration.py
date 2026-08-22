@@ -101,8 +101,10 @@ def compute_homography(
     return homography
 
 
-def save_calibration(points: list[CalibrationPoint]) -> np.ndarray:
-    homography = compute_homography(points)
+def save_calibration(
+    points: list[CalibrationPoint], frame_width: int = 640, frame_height: int = 480
+) -> np.ndarray:
+    homography = compute_homography(points, frame_width, frame_height)
     CALIBRATION_PATH.write_text(json.dumps({
         "points": [asdict(p) for p in points],
         "homography": homography.tolist(),

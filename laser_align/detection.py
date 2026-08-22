@@ -21,7 +21,13 @@ import numpy as np
 from .config import REFERENCE_FRAME_PATH
 from .calibration import pixels_to_mm
 
-MIN_OBJECT_AREA_PX = 400
+# Expressed as a fraction of the frame's total pixel area, not an absolute
+# pixel count - camera resolution is user-configurable (Settings), and an
+# object's pixel footprint scales with resolution (a physical 43mm-wide
+# piece is ~400px at 640x480 but ~1200px at 1920x1080). An absolute count
+# tuned at one resolution silently misbehaves at another. 400px at the
+# original 640x480x=307200px frame this was tuned against -> ~0.0013.
+MIN_OBJECT_AREA_FRACTION = 400 / (640 * 480)
 # Real wood-vs-mat contrast is dramatically stronger than residual sensor
 # noise, and noise blobs (formed by morphological closing bridging small
 # scattered specks together) are much more fragmented than a real object's
@@ -111,8 +117,9 @@ def _largest_filled_contour(
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, open_kernel)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, close_kernel)
 
+    min_area_px = MIN_OBJECT_AREA_FRACTION * frame.shape[0] * frame.shape[1]
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    contours = [c for c in contours if cv2.contourArea(c) >= MIN_OBJECT_AREA_PX]
+    contours = [c for c in contours if cv2.contourArea(c) >= min_area_px]
     contours.sort(key=cv2.contourArea, reverse=True)
 
     for candidate in contours:

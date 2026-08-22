@@ -32,10 +32,16 @@ _grbl: Grbl | None = None
 def get_camera() -> Camera:
     global _camera
     settings = config.load_settings()
-    if _camera is None or _camera.index != settings["camera_index"]:
+    width, height = settings["camera_width"], settings["camera_height"]
+    if (
+        _camera is None
+        or _camera.index != settings["camera_index"]
+        or _camera.width != width
+        or _camera.height != height
+    ):
         if _camera is not None:
             _camera.release()
-        _camera = Camera(settings["camera_index"])
+        _camera = Camera(settings["camera_index"], width, height)
     return _camera
 
 
@@ -58,15 +64,32 @@ def settings_page():
         # with a fallback to the current value means one card's submit
         # can't accidentally wipe fields that belong to another card.
         current = config.load_settings()
+        new_width = int(request.form.get("camera_width", current["camera_width"]))
+        new_height = int(request.form.get("camera_height", current["camera_height"]))
         config.save_settings({
             "camera_index": int(request.form.get("camera_index", current["camera_index"])),
+            "camera_width": new_width,
+            "camera_height": new_height,
             "bed_width_mm": float(request.form.get("bed_width_mm", current["bed_width_mm"])),
             "bed_height_mm": float(request.form.get("bed_height_mm", current["bed_height_mm"])),
             "detection_method": request.form.get("detection_method", current["detection_method"]),
             "grbl_port": request.form.get("grbl_port", current["grbl_port"]),
             "grbl_baud": int(request.form.get("grbl_baud", current["grbl_baud"])),
         })
-        flash("Settings saved.")
+        if new_width != current["camera_width"] or new_height != current["camera_height"]:
+            # Saved calibration/bed-area are pixel coordinates at whatever
+            # resolution they were set at - silently keeping them after a
+            # resolution change would misalign everything without any
+            # obvious symptom, so clear them out and make the user redo
+            # both deliberately rather than debug a mystery later.
+            config.CALIBRATION_PATH.unlink(missing_ok=True)
+            config.save_settings({"bed_roi_px": None})
+            flash(
+                f"Resolution changed to {new_width}x{new_height} - calibration and bed "
+                f"area were cleared since they're tied to the old resolution. Redo both."
+            )
+        else:
+            flash("Settings saved.")
         return redirect(url_for("settings_page"))
     return render_template("settings.html", settings=config.load_settings())
 
@@ -140,8 +163,11 @@ def calibration_reset():
 
 @app.route("/calibration/save", methods=["POST"])
 def calibration_save():
+    settings = config.load_settings()
     try:
-        calibration.save_calibration(_pending_points)
+        calibration.save_calibration(
+            _pending_points, settings["camera_width"], settings["camera_height"]
+        )
         flash("Calibration saved.")
     except CalibrationError as e:
         flash(f"Calibration failed: {e}")

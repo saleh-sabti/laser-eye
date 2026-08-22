@@ -15,6 +15,12 @@ REFERENCE_FRAME_PATH = DATA_DIR / "empty_bed_reference.png"
 
 DEFAULT_SETTINGS = {
     "camera_index": 0,
+    "camera_width": 640,   # OpenCV/DSHOW default to 640x480 unless told otherwise - most
+    "camera_height": 480,  # webcams support far more; raising this is the single biggest
+                            # precision lever available (more real pixels per mm of bed).
+                            # Changing it invalidates any saved calibration/bed area, since
+                            # those are pixel coordinates at whatever resolution they were
+                            # set at - redo both after changing this.
     "bed_width_mm": 400.0,
     "bed_height_mm": 400.0,
     "detection_method": "classical",  # "classical" or "rfdetr"

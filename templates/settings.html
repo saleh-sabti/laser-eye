@@ -13,6 +13,25 @@
       <span id="probe-result" class="hint" style="align-self:center;"></span>
     </div>
 
+    <label>Camera resolution
+      <select name="camera_resolution" id="camera_resolution" onchange="applyResPreset()">
+        <option value="640x480" {{ "selected" if settings.camera_width == 640 and settings.camera_height == 480 }}>640 x 480 (default, lowest precision)</option>
+        <option value="1280x720" {{ "selected" if settings.camera_width == 1280 and settings.camera_height == 720 }}>1280 x 720</option>
+        <option value="1920x1080" {{ "selected" if settings.camera_width == 1920 and settings.camera_height == 1080 }}>1920 x 1080 (best precision, if your camera supports it)</option>
+        <option value="custom" {{ "selected" if settings.camera_width not in (640, 1280, 1920) }}>Custom</option>
+      </select>
+    </label>
+    <div class="btn-row" style="align-items:center;">
+      <label style="margin:0;">Width <input type="number" name="camera_width" id="camera_width" value="{{ settings.camera_width }}" style="width:90px;"></label>
+      <label style="margin:0;">Height <input type="number" name="camera_height" id="camera_height" value="{{ settings.camera_height }}" style="width:90px;"></label>
+    </div>
+    <p class="hint">Higher resolution means finer detection precision (more real pixels per
+    mm of bed) at the cost of more CPU/bandwidth for the live preview. Not every camera
+    supports every resolution - if you request one it can't do, it'll just fall back to
+    whatever it actually delivers. <strong>Changing this clears your saved calibration and
+    bed area</strong> (they're pixel coordinates tied to the old resolution) - redo both
+    after saving.</p>
+
     <label>Bed width (mm)
       <input type="number" step="0.1" name="bed_width_mm" value="{{ settings.bed_width_mm }}">
     </label>
@@ -56,6 +75,14 @@
 </div>
 
 <script>
+function applyResPreset() {
+  const val = document.getElementById('camera_resolution').value;
+  if (val === 'custom') return;
+  const [w, h] = val.split('x');
+  document.getElementById('camera_width').value = w;
+  document.getElementById('camera_height').value = h;
+}
+
 function probe() {
   document.getElementById('probe-result').textContent = 'Scanning…';
   fetch('{{ url_for("settings_probe") }}').then(r => r.json()).then(data => {
