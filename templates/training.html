@@ -18,7 +18,7 @@
     </tr>
   </table>
 
-  <img id="training-preview" class="frame" src="{{ url_for('training_preview') }}?t={{ range(0,100000)|random }}">
+  <div class="viewfinder"><img id="training-preview" class="frame" src="{{ url_for('training_preview') }}?t={{ range(0,100000)|random }}"></div>
 
   <div class="btn-row">
     <button type="button" class="btn" onclick="document.getElementById('training-preview').src='{{ url_for('training_preview') }}?t=' + Date.now()">🔄 Refresh photo</button>

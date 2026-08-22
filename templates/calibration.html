@@ -71,9 +71,9 @@
   at the source instead of chasing threshold tweaks.</p>
   <p class="hint">Current bed area: {{ "X " ~ settings.bed_roi_px[0] ~ "-" ~ settings.bed_roi_px[2] ~ ", Y " ~ settings.bed_roi_px[1] ~ "-" ~ settings.bed_roi_px[3] if settings.bed_roi_px else "not set - whole frame is considered" }}</p>
 
-  <div style="position:relative; display:inline-block;">
+  <div class="viewfinder">
     <img id="roi-snap" class="frame" src="{{ url_for('calibration_snapshot') }}?t={{ range(0,100000)|random }}">
-    <div id="roi-box" style="position:absolute; border:2px dashed #3ddc3d; display:none; pointer-events:none;"></div>
+    <div id="roi-box" style="position:absolute; border:2px dashed var(--target); display:none; pointer-events:none;"></div>
   </div>
   <div class="btn-row">
     <button type="button" class="btn" onclick="document.getElementById('roi-snap').src='{{ url_for('calibration_snapshot') }}?t=' + Date.now()">🔄 Refresh photo</button>
@@ -162,7 +162,7 @@
   add the point. You need at least {{ min_points }} points, spread around the bed (not in a
   straight line).</p>
 
-  <img id="snap" class="frame" src="{{ url_for('calibration_snapshot') }}?t={{ range(0,100000)|random }}">
+  <div class="viewfinder"><img id="snap" class="frame" src="{{ url_for('calibration_snapshot') }}?t={{ range(0,100000)|random }}"></div>
   <div class="btn-row">
     <button type="button" class="btn" onclick="document.getElementById('snap').src='{{ url_for('calibration_snapshot') }}?t=' + Date.now()">🔄 Refresh photo</button>
   </div>

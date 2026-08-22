@@ -22,7 +22,7 @@
 
 <div class="card">
   <h2>🖼️ Detection preview</h2>
-  <img class="frame" src="{{ url_for('design_preview') }}?t={{ range(0,100000)|random }}">
+  <div class="viewfinder"><img class="frame" src="{{ url_for('design_preview') }}?t={{ range(0,100000)|random }}"></div>
 </div>
 
 {% if last_export %}
