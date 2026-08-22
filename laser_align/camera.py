@@ -43,10 +43,17 @@ def probe_devices(max_index: int = 5) -> list[int]:
 
 
 class Camera:
-    def __init__(self, index: int, width: int = 640, height: int = 480):
+    def __init__(self, index: int, width: int = 640, height: int = 480, rotate_180: bool = False):
         self.index = index
         self.width = width
         self.height = height
+        # Only 180deg is supported for now - it's a plain flip, so frame
+        # dimensions stay the same and nothing downstream (calibration,
+        # detection, ROI) needs to know rotation happened at all, since
+        # it's applied here before any of them ever see the frame. 90/270
+        # would swap width<->height and need touching every place that
+        # currently assumes camera_width x camera_height - not done yet.
+        self.rotate_180 = rotate_180
         self._lock = threading.RLock()
         self._cap = cv2.VideoCapture(index, cv2.CAP_DSHOW)
         self._apply_resolution()
@@ -106,6 +113,8 @@ class Camera:
                         return self._placeholder_frame()
             else:
                 self._dead_frame_streak = 0
+            if self.rotate_180:
+                frame = cv2.rotate(frame, cv2.ROTATE_180)
             return frame
 
     def _placeholder_frame(self) -> np.ndarray:

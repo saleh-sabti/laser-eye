@@ -32,16 +32,17 @@ _grbl: Grbl | None = None
 def get_camera() -> Camera:
     global _camera
     settings = config.load_settings()
-    width, height = settings["camera_width"], settings["camera_height"]
+    width, height, rotate_180 = settings["camera_width"], settings["camera_height"], settings["camera_rotate_180"]
     if (
         _camera is None
         or _camera.index != settings["camera_index"]
         or _camera.width != width
         or _camera.height != height
+        or _camera.rotate_180 != rotate_180
     ):
         if _camera is not None:
             _camera.release()
-        _camera = Camera(settings["camera_index"], width, height)
+        _camera = Camera(settings["camera_index"], width, height, rotate_180)
     return _camera
 
 
@@ -66,27 +67,31 @@ def settings_page():
         current = config.load_settings()
         new_width = int(request.form.get("camera_width", current["camera_width"]))
         new_height = int(request.form.get("camera_height", current["camera_height"]))
+        new_rotate_180 = "camera_rotate_180" in request.form
         config.save_settings({
             "camera_index": int(request.form.get("camera_index", current["camera_index"])),
             "camera_width": new_width,
             "camera_height": new_height,
+            "camera_rotate_180": new_rotate_180,
             "bed_width_mm": float(request.form.get("bed_width_mm", current["bed_width_mm"])),
             "bed_height_mm": float(request.form.get("bed_height_mm", current["bed_height_mm"])),
             "detection_method": request.form.get("detection_method", current["detection_method"]),
             "grbl_port": request.form.get("grbl_port", current["grbl_port"]),
             "grbl_baud": int(request.form.get("grbl_baud", current["grbl_baud"])),
         })
-        if new_width != current["camera_width"] or new_height != current["camera_height"]:
+        resolution_changed = new_width != current["camera_width"] or new_height != current["camera_height"]
+        rotation_changed = new_rotate_180 != current["camera_rotate_180"]
+        if resolution_changed or rotation_changed:
             # Saved calibration/bed-area are pixel coordinates at whatever
-            # resolution they were set at - silently keeping them after a
-            # resolution change would misalign everything without any
-            # obvious symptom, so clear them out and make the user redo
-            # both deliberately rather than debug a mystery later.
+            # resolution/orientation they were set at - silently keeping
+            # them after either changes would misalign everything without
+            # any obvious symptom, so clear them out and make the user
+            # redo both deliberately rather than debug a mystery later.
             config.CALIBRATION_PATH.unlink(missing_ok=True)
             config.save_settings({"bed_roi_px": None})
             flash(
-                f"Resolution changed to {new_width}x{new_height} - calibration and bed "
-                f"area were cleared since they're tied to the old resolution. Redo both."
+                "Camera resolution/orientation changed - calibration and bed area were "
+                "cleared since they're tied to the old settings. Redo both."
             )
         else:
             flash("Settings saved.")

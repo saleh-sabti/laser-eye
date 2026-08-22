@@ -15,6 +15,8 @@ REFERENCE_FRAME_PATH = DATA_DIR / "empty_bed_reference.png"
 
 DEFAULT_SETTINGS = {
     "camera_index": 0,
+    "camera_rotate_180": False,  # for a physically upside-down mount - a plain flip, doesn't
+                                 # affect calibration/detection math at all, purely display.
     "camera_width": 640,   # OpenCV/DSHOW default to 640x480 unless told otherwise - most
     "camera_height": 480,  # webcams support far more; raising this is the single biggest
                             # precision lever available (more real pixels per mm of bed).

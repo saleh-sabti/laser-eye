@@ -32,6 +32,13 @@
     bed area</strong> (they're pixel coordinates tied to the old resolution) - redo both
     after saving.</p>
 
+    <label style="display:flex; align-items:center; gap:0.5rem;">
+      <input type="checkbox" name="camera_rotate_180" style="width:auto; margin:0;" {{ "checked" if settings.camera_rotate_180 }}>
+      Camera is mounted upside-down (rotate preview 180°)
+    </label>
+    <p class="hint">Only affects display/orientation, not precision - but like resolution,
+    changing it clears calibration and bed area since those are tied to pixel positions.</p>
+
     <label>Bed width (mm)
       <input type="number" step="0.1" name="bed_width_mm" value="{{ settings.bed_width_mm }}">
     </label>

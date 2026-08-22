@@ -180,6 +180,23 @@ footage - they're likely still fine at higher resolution (kernels get proportion
 smaller relative to any given object, if anything more precision-preserving) but haven't
 been re-validated against real noise footage at 1080p the way the original values were.
 
+**Camera angle/crop question, same day**: the user asked about digitally adjusting
+camera angle and cropping, and whether AI was needed for that. Both were already mostly
+covered - angle/perspective correction is what the calibration homography *is*, and
+cropping is the bed-ROI feature - so the answer was mostly "you already have this."
+Classical geometry (an exact homography fit) is the right tool here, not a learned
+model - AI is used elsewhere in this project (RF-DETR) for recognizing wood under varying
+conditions, a genuinely different, non-geometric problem. The one real gap was a
+physically upside-down camera mount, which the math doesn't care about but a human
+looking at the live preview would - added `camera_rotate_180` (`Camera.read()` applies
+`cv2.rotate(..., ROTATE_180)` right after capture, before anything else ever sees the
+frame, so nothing downstream needs to know rotation happened). Deliberately scoped to
+180 only, not a general angle: 180 is a plain flip with no dimension change, so it's a
+one-line addition; 90/270 would swap width<->height and require touching everywhere that
+currently assumes `camera_width` x `camera_height` directly - not done. Like a resolution
+change, toggling rotation now clears calibration/bed-ROI too, for the same reason (their
+saved pixel coordinates are tied to the orientation they were captured under).
+
 ## Alignment & export (`laser_align/align.py`, `export.py`, `photo_align.py`)
 
 Two input types, handled differently:
