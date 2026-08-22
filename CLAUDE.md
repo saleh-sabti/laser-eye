@@ -71,7 +71,11 @@ for images -> `export.write_svg()` / `photo_align.save_png()`.
   point pairs; `pixels_to_mm()` is the actual pixel->real-world conversion everything else
   depends on. `find_duplicate_conflict()` guards against the easy mistake of clicking a
   new point but forgetting to update the mm fields (browser autocomplete tends to do this
-  for you unless the calling form disables it).
+  for you unless the calling form disables it). `compute_homography()` also rejects points
+  that are pixel-clustered into one area of the frame (each axis must span at least
+  `MIN_SPREAD_FRACTION` of the frame) - a homography fit from clustered points reproduces
+  those points exactly but extrapolates wildly for anything outside that area; this was
+  hit for real (a detected object came back 170,000+ mm off) before the check existed.
 - **`detection.py`** - background-subtraction against a saved reference frame, diffed
   across all three color channels (not grayscale - see `context.md` for why that matters),
   Otsu-thresholded within the optional bed ROI (`settings["bed_roi_px"]`, camera pixels -
@@ -82,6 +86,10 @@ for images -> `export.write_svg()` / `photo_align.save_png()`.
   magnitude and a minimum solidity to be accepted - real wood-vs-mat contrast and shape
   coherence are both far stronger than residual sensor noise, which otherwise passes a
   pure area filter. See `context.md` for the measured numbers behind these thresholds.
+  `Detection.length_mm`/`width_mm` (the oriented `cv2.minAreaRect` on `contour_mm`) give
+  the piece's real-world size; `draw_overlay()` bakes that into the image as a label. If
+  these ever come back absurd (kilometers, not mm), it's a bad calibration, not this
+  code - check `calibration.py`'s spread guard didn't get bypassed somehow.
 - **`rfdetr_detect.py`** - same `Detection` output shape as `detection.py`, backed by a
   fine-tuned RF-DETR segmentation model instead. Raises `ModelNotTrainedError` until a
   checkpoint exists at `calibration_data/rfdetr_model/checkpoint_best_ema.pth`; callers

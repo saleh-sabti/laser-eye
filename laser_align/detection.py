@@ -47,6 +47,8 @@ class Detection:
     centroid_px: tuple[float, float]
     centroid_mm: tuple[float, float]
     angle_deg: float             # principal axis angle, machine-mm frame
+    length_mm: float             # real-world size: longer side of the oriented
+    width_mm: float              # bounding box, shorter side - both in mm
 
 
 def save_reference_frame(frame: np.ndarray) -> None:
@@ -140,6 +142,16 @@ def _principal_angle_deg(points_mm: np.ndarray) -> float:
     return float(np.degrees(np.arctan2(principal_axis[1], principal_axis[0])))
 
 
+def _oriented_dimensions_mm(contour_mm: np.ndarray) -> tuple[float, float]:
+    """Real-world size via the minimum-area bounding box (the smallest
+    rectangle, at any angle, that fully contains the outline) - the
+    standard way to answer "how big is this piece actually" for an
+    irregular shape. Returns (longer side, shorter side) in mm.
+    """
+    (_, _), (w, h), _ = cv2.minAreaRect(contour_mm.astype(np.float32))
+    return (max(w, h), min(w, h))
+
+
 def detect_object(
     frame: np.ndarray, homography: np.ndarray, roi: tuple[int, int, int, int] | None = None
 ) -> Detection:
@@ -162,6 +174,7 @@ def detect_object(
     centroid_mm = (float(centroid_mm_arr[0][0]), float(centroid_mm_arr[0][1]))
 
     angle_deg = _principal_angle_deg(contour_mm)
+    length_mm, width_mm = _oriented_dimensions_mm(contour_mm)
 
     return Detection(
         contour_px=contour_px,
@@ -169,6 +182,8 @@ def detect_object(
         centroid_px=centroid_px,
         centroid_mm=centroid_mm,
         angle_deg=angle_deg,
+        length_mm=length_mm,
+        width_mm=width_mm,
     )
 
 
@@ -178,4 +193,9 @@ def draw_overlay(frame: np.ndarray, detection: Detection) -> np.ndarray:
     cv2.polylines(overlay, [pts], isClosed=True, color=(0, 255, 0), thickness=2)
     cx, cy = int(detection.centroid_px[0]), int(detection.centroid_px[1])
     cv2.drawMarker(overlay, (cx, cy), (0, 0, 255), cv2.MARKER_CROSS, 20, 2)
+
+    label = f"{detection.length_mm:.0f} x {detection.width_mm:.0f} mm"
+    text_pos = (cx + 12, cy - 12)
+    cv2.putText(overlay, label, text_pos, cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 3, cv2.LINE_AA)
+    cv2.putText(overlay, label, text_pos, cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 1, cv2.LINE_AA)
     return overlay

@@ -141,6 +141,23 @@ correctly reports "no object found" now - and cross-checked against the real jag
 piece from the precision fix above to confirm it still detects correctly (solidity 0.789,
 comfortably clears the 0.5 floor).
 
+**Sixth bug, found via a new feature (2026-08-22)**: added real-world dimensions
+(`Detection.length_mm`/`width_mm`, via `cv2.minAreaRect` on `contour_mm`, shown as a
+label baked into `draw_overlay()`) so the app reports how big the detected piece actually
+is, not just its outline/position. First test returned length=287,007mm - not a bug in
+the new code; the *saved calibration itself* was bad. Its 4 points were pixel-clustered
+into a 282x117px band (only 44% width / 24% height of the 640x480 frame, all in one
+horizontal strip) - a homography fit from that reproduces those 4 points exactly but
+extrapolates wildly for anything outside the strip, which is where the actual workpiece
+was. This is the third distinct calibration-data-quality failure this project has hit
+(duplicate points, physically-impossible values, now clustering) despite the UI
+instructions already saying to spread points around the bed. Added an automatic guard in
+`calibration.compute_homography()` this time instead of relying on the instructions
+alone: rejects a save if either pixel axis spans less than 35% of the frame dimension
+(`MIN_SPREAD_FRACTION`), with a message telling the user to spread points across the
+whole bed. Verified it actually catches the exact bad calibration that caused this.
+**The user needs to redo calibration again** - the bad one was cleared.
+
 ## Alignment & export (`laser_align/align.py`, `export.py`, `photo_align.py`)
 
 Two input types, handled differently:

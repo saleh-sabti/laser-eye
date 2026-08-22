@@ -13,7 +13,7 @@ import numpy as np
 
 from .calibration import pixels_to_mm
 from .config import DATA_DIR
-from .detection import Detection, _principal_angle_deg
+from .detection import Detection, _principal_angle_deg, _oriented_dimensions_mm
 
 MODEL_DIR = DATA_DIR / "rfdetr_model"
 MODEL_PATH = MODEL_DIR / "checkpoint_best_ema.pth"
@@ -67,6 +67,7 @@ def detect_object(frame: np.ndarray, homography: np.ndarray) -> Detection:
     centroid_mm_arr = pixels_to_mm(homography, np.array([centroid_px]))
     centroid_mm = (float(centroid_mm_arr[0][0]), float(centroid_mm_arr[0][1]))
     angle_deg = _principal_angle_deg(contour_mm)
+    length_mm, width_mm = _oriented_dimensions_mm(contour_mm)
 
     return Detection(
         contour_px=contour_px,
@@ -74,4 +75,6 @@ def detect_object(frame: np.ndarray, homography: np.ndarray) -> Detection:
         centroid_px=centroid_px,
         centroid_mm=centroid_mm,
         angle_deg=angle_deg,
+        length_mm=length_mm,
+        width_mm=width_mm,
     )

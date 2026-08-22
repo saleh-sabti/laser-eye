@@ -26,6 +26,15 @@ MIN_POINTS = 4
 DUPLICATE_PIXEL_TOLERANCE_PX = 3.0
 DUPLICATE_MM_TOLERANCE_MM = 0.5
 
+# A homography fitted from points crammed into one small area of the frame
+# reproduces those points exactly, but extrapolates wildly for anything
+# outside that area - the classic failure mode is points clustered in one
+# strip/corner instead of spread across the bed. Caught in practice: 4
+# points spanning only 44% of frame width and 24% of height produced a
+# detected object over 170,000mm off from reality. Each axis must span at
+# least this fraction of the frame to catch that before it's saved.
+MIN_SPREAD_FRACTION = 0.35
+
 
 @dataclass
 class CalibrationPoint:
@@ -61,11 +70,26 @@ def find_duplicate_conflict(points: list[CalibrationPoint], candidate: Calibrati
     return None
 
 
-def compute_homography(points: list[CalibrationPoint]) -> np.ndarray:
+def compute_homography(
+    points: list[CalibrationPoint], frame_width: int = 640, frame_height: int = 480
+) -> np.ndarray:
     if len(points) < MIN_POINTS:
         raise CalibrationError(
             f"Need at least {MIN_POINTS} calibration points, got {len(points)}."
         )
+
+    xs = [p.pixel_x for p in points]
+    ys = [p.pixel_y for p in points]
+    x_spread, y_spread = max(xs) - min(xs), max(ys) - min(ys)
+    min_x_spread, min_y_spread = frame_width * MIN_SPREAD_FRACTION, frame_height * MIN_SPREAD_FRACTION
+    if x_spread < min_x_spread or y_spread < min_y_spread:
+        raise CalibrationError(
+            f"These points only span {x_spread:.0f}x{y_spread:.0f}px of the "
+            f"{frame_width}x{frame_height}px frame - too clustered in one area. Reset and "
+            f"redo them spread across the whole visible bed (e.g. one point per corner), "
+            f"or the mapping will extrapolate badly for anything outside where you clicked."
+        )
+
     pixel_pts = np.array([[p.pixel_x, p.pixel_y] for p in points], dtype=np.float32)
     mm_pts = np.array([[p.machine_x_mm, p.machine_y_mm] for p in points], dtype=np.float32)
     homography, _ = cv2.findHomography(pixel_pts, mm_pts, method=0)
