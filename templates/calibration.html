@@ -245,6 +245,28 @@ function roiToDisplayCoords(px, py) {
   };
 }
 
+// Redraw the already-saved bed area (if any) as soon as the photo has
+// loaded - otherwise the box only ever appeared right after clicking two
+// fresh corners, so it looked like the setting had been lost every time
+// you left and came back to this page, even though it was saved fine.
+{% if settings.bed_roi_px %}
+const savedRoi = {
+  x0: {{ settings.bed_roi_px[0] }}, y0: {{ settings.bed_roi_px[1] }},
+  x1: {{ settings.bed_roi_px[2] }}, y1: {{ settings.bed_roi_px[3] }},
+};
+function drawSavedRoi() {
+  const a = roiToDisplayCoords(savedRoi.x0, savedRoi.y0);
+  const b = roiToDisplayCoords(savedRoi.x1, savedRoi.y1);
+  roiBox.style.left = a.x + 'px';
+  roiBox.style.top = a.y + 'px';
+  roiBox.style.width = (b.x - a.x) + 'px';
+  roiBox.style.height = (b.y - a.y) + 'px';
+  roiBox.style.display = 'block';
+}
+if (roiImg.complete) drawSavedRoi();
+else roiImg.addEventListener('load', drawSavedRoi);
+{% endif %}
+
 roiImg.addEventListener('click', (e) => {
   const rect = roiImg.getBoundingClientRect();
   const scaleX = roiImg.naturalWidth / rect.width;
