@@ -380,6 +380,23 @@ Pages: Dashboard, Settings (camera/bed/detection-method/GRBL-port config), Calib
 (reference points + optional direct GRBL jog panel), Live View, Design & Export,
 Training Data (RF-DETR dataset collection).
 
+**Calibration page decluttered, reference-frame capture moved to Live View
+(2026-08-22).** Two user complaints once ArUco calibration (above) existed alongside the
+older manual flow: (1) the ArUco explanation/marker-download grid/registry table/
+registration form was always fully expanded, even after setup was long done and the only
+thing anyone actually clicks day-to-day is "Calibrate now"; (2) the "empty-bed reference
+frame" capture card lived on the Calibration page, disconnected from the live camera feed
+you actually need to be looking at to confirm the bed is clear before capturing it.
+Fixed both without adding new routes or state: the ArUco setup content is now wrapped in
+a native `<details>` element, auto-expanded only while fewer than
+`aruco_calibration.MIN_MARKERS_REQUIRED` markers are registered and collapsed by default
+once setup is done (the "Calibrate now" button itself stays outside it, always visible);
+the reference-frame card moved to `templates/live.html` as-is, with `live_page()` in
+`app.py` now passing `has_reference=detection.has_reference_frame()` the same way
+`calibration_page()`/`dashboard()` already did. No new logic - pure template
+reorganization, verified via the Flask test client (`GET /calibration` and `GET /live`
+both 200) before restarting the server.
+
 ## Current status (as of this session)
 
 **Working and verified against real hardware:**
