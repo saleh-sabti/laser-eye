@@ -13,22 +13,12 @@
 </div>
 
 <div class="card">
-  <h2><span class="live-dot"></span> Camera feed</h2>
-  <p>Live feed with the detected outline (green) and centroid (red cross) overlaid, when
-  calibration and a reference frame are available.</p>
-  <div class="viewfinder">
-    <img id="feed" class="frame" style="cursor:crosshair;" src="{{ url_for('live_stream') }}">
-    <div id="pin" style="position:absolute; width:14px; height:14px; margin:-7px 0 0 -7px;
-         border:3px solid var(--accent); background:var(--accent-soft);
-         display:none; pointer-events:none;"></div>
-  </div>
-</div>
-
-<div class="card">
-  <h2>📍 Click to check placement</h2>
-  <p>Click a spot on the feed above, then jog the head there. The head physically moves -
-  look at the machine and confirm it lands where you clicked. This is the end-to-end check
-  that the app's mm match the real bed. Never fires the laser.</p>
+  <h2><span class="live-dot"></span> Camera &amp; placement check</h2>
+  <p>The frame below refreshes a few times a second (not a video stream). Detected outline
+  in green. Click an exact spot and the reading is the machine position that spot maps to,
+  straight through the calibration - no estimate. Click near an ArUco corner and it snaps
+  to that marker's registered point, showing the calibration error right there. Connect
+  the machine and "Jog head here" to confirm it physically lands. Never fires the laser.</p>
 
   {% if not has_calibration %}
   <div class="flash" style="background:var(--danger-bg);">
@@ -36,7 +26,20 @@
   </div>
   {% endif %}
 
-  <p class="hint">Clicked point: <span id="pt" class="pixel-readout">(click the feed)</span></p>
+  <p class="hint" id="cal-summary">Checking calibration…</p>
+
+  <div class="viewfinder">
+    <img id="snap" class="frame" style="cursor:crosshair;" src="{{ url_for('live_snapshot') }}">
+    <svg id="ov" style="position:absolute; inset:0; width:100%; height:100%; pointer-events:none;"></svg>
+  </div>
+  <div class="btn-row">
+    <label style="margin:0; display:flex; align-items:center; gap:0.4rem;">
+      <input type="checkbox" id="auto" checked style="width:auto; margin:0;"> Auto-refresh frame
+    </label>
+    <button type="button" class="btn" onclick="refreshAll()">🔄 Refresh now</button>
+  </div>
+
+  <p class="hint">Clicked: <span id="pt" class="pixel-readout">(click the frame)</span></p>
   <p class="hint" id="mm-note" style="display:none;"></p>
 
   <div class="btn-row">
@@ -61,33 +64,97 @@
 </div>
 
 <script>
-const feed = document.getElementById('feed');
-const pin = document.getElementById('pin');
-let picked = null;
+const snap = document.getElementById('snap');
+const ov = document.getElementById('ov');
+let picked = null;   // {px, py} camera pixels
+let markers = [];
+let holdUntil = 0;   // pause auto-refresh briefly after a click
 
-function placePin() {
-  if (!picked) { pin.style.display = 'none'; return; }
-  const rect = feed.getBoundingClientRect();
-  pin.style.left = (picked.px / feed.naturalWidth * rect.width) + 'px';
-  pin.style.top = (picked.py / feed.naturalHeight * rect.height) + 'px';
-  pin.style.display = 'block';
+const NS = 'http://www.w3.org/2000/svg';
+function mk(tag, a) { const e = document.createElementNS(NS, tag); for (const k in a) e.setAttribute(k, a[k]); return e; }
+
+function redraw() {
+  if (!snap.naturalWidth) return;
+  const sx = snap.clientWidth / snap.naturalWidth, sy = snap.clientHeight / snap.naturalHeight;
+  ov.setAttribute('viewBox', `0 0 ${snap.clientWidth} ${snap.clientHeight}`);
+  ov.innerHTML = '';
+  for (const m of markers) {
+    const x = m.px * sx, y = m.py * sy;
+    const bad = m.err_mm != null && m.err_mm > 3;
+    ov.appendChild(mk('circle', { cx: x, cy: y, r: 5, fill: 'none', stroke: bad ? '#E8503D' : '#00C853', 'stroke-width': 2 }));
+    const t = mk('text', { x: x + 8, y: y - 6, fill: '#000', 'font-size': 11, 'font-weight': 700,
+      'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 });
+    t.textContent = `#${m.id}` + (m.err_mm != null ? ` ·${m.err_mm}mm` : '');
+    ov.appendChild(t);
+  }
+  if (picked) {
+    const x = picked.px * sx, y = picked.py * sy;
+    ov.appendChild(mk('line', { x1: x - 10, y1: y, x2: x + 10, y2: y, stroke: '#FF6B6B', 'stroke-width': 2 }));
+    ov.appendChild(mk('line', { x1: x, y1: y - 10, x2: x, y2: y + 10, stroke: '#FF6B6B', 'stroke-width': 2 }));
+    ov.appendChild(mk('circle', { cx: x, cy: y, r: 2.5, fill: '#FF6B6B' }));
+  }
 }
 
-feed.addEventListener('click', (e) => {
-  if (!feed.naturalWidth) return;
-  const rect = feed.getBoundingClientRect();
-  const px = (e.clientX - rect.left) * (feed.naturalWidth / rect.width);
-  const py = (e.clientY - rect.top) * (feed.naturalHeight / rect.height);
-  picked = { px, py };
-  document.getElementById('pt').textContent = `pixel (${px.toFixed(0)}, ${py.toFixed(0)})`;
-  document.getElementById('jogbtn').disabled = false;
-  placePin();
+function loadMarkers() {
+  fetch('{{ url_for("live_markers") }}').then(r => r.json()).then(d => {
+    markers = d.markers || [];
+    const s = document.getElementById('cal-summary');
+    if (!d.calibrated) { s.textContent = 'Not calibrated.'; s.style.color = 'var(--danger-text)'; }
+    else if (d.max_err_mm == null) { s.textContent = `${markers.length} marker(s) in view, none registered yet.`; s.style.color = 'var(--text-muted)'; }
+    else {
+      s.innerHTML = `Calibration check: <strong>${markers.length}/4 markers</strong> in view, `
+        + `worst <strong>${d.max_err_mm} mm</strong> off its registered point`
+        + (d.max_err_mm <= 3 ? ' — good.' : ' — re-run "Calibrate now".');
+      s.style.color = d.max_err_mm <= 3 ? 'var(--text-muted)' : 'var(--danger-text)';
+    }
+    redraw();
+  }).catch(() => {});
+}
 
-  // show where that lands in real machine mm right away
+function refreshSnap() {
+  if (!document.getElementById('auto').checked && Date.now() > holdUntil) {}
+  snap.src = '{{ url_for("live_snapshot") }}?t=' + Date.now();
+}
+function refreshAll() { refreshSnap(); loadMarkers(); }
+
+snap.addEventListener('load', redraw);
+window.addEventListener('resize', redraw);
+setInterval(() => {
+  if (document.getElementById('auto').checked && Date.now() > holdUntil) refreshSnap();
+}, 2500);
+
+snap.addEventListener('click', (e) => {
+  if (!snap.naturalWidth) return;
+  holdUntil = Date.now() + 12000;   // keep the frame still for 12s so the crosshair stays put
+  const rect = snap.getBoundingClientRect();
+  let px = (e.clientX - rect.left) * (snap.naturalWidth / rect.width);
+  let py = (e.clientY - rect.top) * (snap.naturalHeight / rect.height);
+
+  const tol = snap.naturalWidth * 0.03;
+  let snapped = null, best = tol;
+  for (const m of markers) {
+    const d = Math.hypot(m.px - px, m.py - py);
+    if (d < best) { best = d; snapped = m; }
+  }
+  if (snapped) { px = snapped.px; py = snapped.py; }
+  picked = { px, py };
+  document.getElementById('jogbtn').disabled = false;
+  redraw();
+
   const note = document.getElementById('mm-note');
+  const lbl = snapped ? `  ·  snapped to marker #${snapped.id}` + (snapped.reg_x != null ? ` [registered ${snapped.reg_x}, ${snapped.reg_y} mm]` : '') : '';
+  document.getElementById('pt').textContent = `pixel (${px.toFixed(1)}, ${py.toFixed(1)})${lbl}`;
+
+  if (snapped && snapped.reg_x != null) {
+    note.style.display = 'block';
+    note.innerHTML = `calibration maps this corner to <strong>X ${snapped.map_x}, Y ${snapped.map_y} mm</strong>`
+      + ` &nbsp;·&nbsp; registered <strong>${snapped.reg_x}, ${snapped.reg_y} mm</strong>`
+      + ` &nbsp;·&nbsp; off by <strong>${snapped.err_mm} mm</strong>`;
+    note.style.color = snapped.err_mm > 3 ? 'var(--danger-text)' : 'var(--text-muted)';
+    return;
+  }
   fetch('{{ url_for("live_pixel_to_mm") }}', { method: 'POST', body: new URLSearchParams({ px, py }) })
-    .then(r => r.json())
-    .then(d => {
+    .then(r => r.json()).then(d => {
       note.style.display = 'block';
       if (!d.ok) { note.textContent = d.error; note.style.color = 'var(--text-muted)'; return; }
       let tail = '';
@@ -97,28 +164,20 @@ feed.addEventListener('click', (e) => {
       note.style.color = d.way_off ? 'var(--danger-text)' : 'var(--text-muted)';
     });
 });
-window.addEventListener('resize', placePin);
 
 function jogToPin() {
   if (!picked) return;
   const btn = document.getElementById('jogbtn');
   btn.disabled = true;
-  const body = new URLSearchParams({ px: picked.px, py: picked.py });
-  fetch('{{ url_for("live_jog_to_point") }}', { method: 'POST', body: body })
-    .then(r => r.json())
-    .then(data => {
+  fetch('{{ url_for("live_jog_to_point") }}', { method: 'POST', body: new URLSearchParams({ px: picked.px, py: picked.py }) })
+    .then(r => r.json()).then(data => {
       btn.disabled = false;
-      if (data.x_mm !== undefined) {
-        document.getElementById('pt').textContent =
-          `pixel (${picked.px.toFixed(0)}, ${picked.py.toFixed(0)})  ->  X ${data.x_mm} mm, Y ${data.y_mm} mm`;
-      }
       if (!data.ok) {
         if (data.alarm) document.getElementById('alarm').style.display = 'block';
         else alert('Jog failed: ' + data.error);
       }
       refreshPos();
-    })
-    .catch(() => { btn.disabled = false; });
+    }).catch(() => { btn.disabled = false; });
 }
 
 function refreshPos() {
@@ -132,5 +191,6 @@ function refreshPos() {
 }
 setInterval(refreshPos, 1500);
 refreshPos();
+loadMarkers();
 </script>
 {% endblock %}

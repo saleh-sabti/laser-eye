@@ -420,17 +420,29 @@ against the real bad calibration and against valid quads given in scrambled poin
 The fix on the user's side is to re-register each marker by jogging the laser to its
 bracketed corner and reading the real X/Y, not typing nominal grid values.
 
-**Click-to-jog placement check (Live View).** Briefly built as a separate "Bed View"
-page with a rectified (`cv2.warpPerspective`) top-down render, then removed the same day
-on user feedback: with the current bad calibration the warped bed looked visibly crooked
-and unhelpful, and the user preferred working on the raw camera feed. What survived is
-the useful half - `/live/jog_to_point` takes a clicked *camera pixel*, runs it through
-`calibration.pixels_to_mm` (the same homography as everything else - no rectified view
-needed), and jogs the head there via `_grbl_call(g.jog_to(...))` (jog-only connection,
-never fires the laser). Live View got a compact GRBL connect/position panel for this.
-It immediately exposes bad calibration: clicking bed-centre currently reports ~1256 mm.
-`laser_align/rectify.py` and `templates/bed.html` were deleted; the rectification
-approach is still documented in the plan doc for the eventual placement editor.
+**Click-to-check placement (Live View).** Briefly built as a separate "Bed View" page
+with a rectified (`cv2.warpPerspective`) top-down render, then removed the same day on
+user feedback: the warped bed looked crooked and unhelpful, and the raw feed is more
+legible. `laser_align/rectify.py` and `templates/bed.html` were deleted; the rectified
+approach stays in the plan doc for the eventual editor.
+
+What Live View has now: the camera is a **polled snapshot** (`/live/snapshot.jpg`, ~2.5s,
+detection overlay baked on; `?plain=1` for a clean frame) - **not** the MJPEG stream,
+which alongside a snapshot and marker-detect made three concurrent camera readers and
+crashed the process. Root cause was actually `app.py`'s `get_camera()`: unguarded, so two
+first-load requests each constructed a `cv2.VideoCapture` on the same index - now wrapped
+in `_camera_lock` (`Camera.read()` already had its own lock for frame grabs; this covers
+construction).
+
+`/live/markers.json` detects the ArUco markers live and returns, per marker: sub-pixel
+reference-corner pixel, registered mm, the mm the current calibration maps that pixel to,
+and the error between them - plus `max_err_mm` across all visible markers. The placement
+card draws the marker corners on the snapshot, snaps a click within ~3% of frame width
+onto the nearest, and shows "maps to X / registered Y / off by N mm" for that exact
+corner (no click imprecision). Arbitrary clicks go through `/live/pixel_to_mm` (pure
+`pixels_to_mm`, no jog) for an instant readout, or `/live/jog_to_point` to move the head.
+After the user re-registered the four markers to a clean rectangle, the visible markers
+check out at ~0.2-1 mm error.
 
 **Calibration page decluttered, reference-frame capture moved to Live View
 (2026-08-22).** Two user complaints once ArUco calibration (above) existed alongside the

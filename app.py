@@ -23,7 +23,10 @@ from laser_align.aruco_calibration import NoMarkersConfiguredError, NotEnoughMar
 app = Flask(__name__)
 app.secret_key = "laser-auto-align-local"  # local-only tool, no real auth surface
 
+import threading
+
 _camera: Camera | None = None
+_camera_lock = threading.Lock()
 _last_export_path: str | None = None
 _last_export_kind: str | None = None   # "svg" or "png"
 _last_placement_info: dict | None = None  # only set for photo (png) exports
@@ -31,20 +34,30 @@ _grbl: Grbl | None = None
 
 
 def get_camera() -> Camera:
+    """Get the shared Camera, creating/recreating it if settings changed.
+
+    Guarded by a lock: without it, two requests that both find `_camera is
+    None` (e.g. a page that fires a snapshot and a marker-detect at once on
+    first load) each construct a `cv2.VideoCapture` on the same device index
+    concurrently, which crashes the process natively with no traceback.
+    `Camera.read()` has its own lock for concurrent frame grabs; this one
+    only covers construction/replacement.
+    """
     global _camera
-    settings = config.load_settings()
-    width, height, rotate_180 = settings["camera_width"], settings["camera_height"], settings["camera_rotate_180"]
-    if (
-        _camera is None
-        or _camera.index != settings["camera_index"]
-        or _camera.width != width
-        or _camera.height != height
-        or _camera.rotate_180 != rotate_180
-    ):
-        if _camera is not None:
-            _camera.release()
-        _camera = Camera(settings["camera_index"], width, height, rotate_180)
-    return _camera
+    with _camera_lock:
+        settings = config.load_settings()
+        width, height, rotate_180 = settings["camera_width"], settings["camera_height"], settings["camera_rotate_180"]
+        if (
+            _camera is None
+            or _camera.index != settings["camera_index"]
+            or _camera.width != width
+            or _camera.height != height
+            or _camera.rotate_180 != rotate_180
+        ):
+            if _camera is not None:
+                _camera.release()
+            _camera = Camera(settings["camera_index"], width, height, rotate_180)
+        return _camera
 
 
 @app.route("/")
@@ -504,6 +517,55 @@ def design_export():
     if _last_export_kind == "png":
         return send_file(_last_export_path, mimetype="image/png", as_attachment=True, download_name="aligned_design.png")
     return send_file(_last_export_path, mimetype="image/svg+xml", as_attachment=True, download_name="aligned_design.svg")
+
+
+@app.route("/live/snapshot.jpg")
+def live_snapshot():
+    """One frame for Live View - polled a couple times a second rather than
+    streamed, so the page only ever has one camera reader (three concurrent
+    ones - stream + snapshot + marker detect - crashed the process). The
+    detected outline is drawn on unless ?plain=1 (the placement check wants
+    a clean frame to click)."""
+    frame = get_camera().read()
+    if request.args.get("plain") != "1":
+        det, _ = _detect_current(frame)
+        if det is not None:
+            frame = detection.draw_overlay(frame, det)
+    return _jpeg_response(frame)
+
+
+@app.route("/live/markers.json")
+def live_markers():
+    """Every ArUco marker visible right now: its sub-pixel reference-corner
+    pixel, the machine mm it was registered at, and the machine mm the
+    current calibration maps that pixel to. Lets the placement check snap a
+    click exactly onto a known corner and show the calibration error there -
+    no estimating."""
+    frame = get_camera().read()
+    detected = aruco_calibration.detect_markers(frame)
+    registered = aruco_calibration.load_marker_positions()
+    homography = calibration.load_homography()
+
+    out = []
+    for mid, (px, py) in sorted(detected.items()):
+        entry = {
+            "id": mid,
+            "corner": aruco_calibration.CORNER_NAME.get(mid, "?"),
+            "px": round(px, 2), "py": round(py, 2),
+        }
+        if mid in registered:
+            entry["reg_x"], entry["reg_y"] = registered[mid]
+        if homography is not None:
+            mx, my = calibration.pixels_to_mm(homography, np.array([[px, py]]))[0]
+            entry["map_x"], entry["map_y"] = round(float(mx), 1), round(float(my), 1)
+            if mid in registered:
+                entry["err_mm"] = round(
+                    float(np.hypot(mx - registered[mid][0], my - registered[mid][1])), 1
+                )
+        out.append(entry)
+    max_err = max((m["err_mm"] for m in out if "err_mm" in m), default=None)
+    return jsonify({"markers": out, "max_err_mm": max_err,
+                    "calibrated": homography is not None})
 
 
 @app.route("/live/pixel_to_mm", methods=["POST"])
