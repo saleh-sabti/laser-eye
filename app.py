@@ -13,7 +13,7 @@ import cv2
 import numpy as np
 from flask import Flask, Response, render_template, request, redirect, url_for, send_file, flash, jsonify
 
-from laser_align import config, calibration, detection, align, export, photo_align, dataset, rfdetr_detect, grbl, aruco_calibration
+from laser_align import config, calibration, detection, align, export, photo_align, dataset, rfdetr_detect, grbl, aruco_calibration, placement
 from laser_align.camera import Camera, probe_devices
 from laser_align.calibration import CalibrationError
 from laser_align.detection import NoReferenceFrameError, NoObjectFoundError
@@ -425,10 +425,18 @@ def live_stream():
 
 PHOTO_EXTENSIONS = {".png", ".jpg", ".jpeg"}
 
+# Hand-placement editor state (single-user local tool, module globals like
+# the rest of app.py). Set when an SVG is uploaded, used by the editor page.
+_place_polylines: list | None = None          # design polylines, mm, centred on origin
+_place_size_mm: tuple[float, float] | None = None
+_place_bed_jpg: bytes | None = None           # frozen bed photo the editor draws on
+_place_detection: detection.Detection | None = None
+
 
 @app.route("/design", methods=["GET", "POST"])
 def design_page():
     global _last_export_path, _last_export_kind, _last_placement_info
+    global _place_polylines, _place_size_mm, _place_bed_jpg, _place_detection
     settings = config.load_settings()
 
     if request.method == "POST":
@@ -438,41 +446,43 @@ def design_page():
             return redirect(url_for("design_page"))
 
         ext = Path(design_file.filename).suffix.lower()
-        frame = get_camera().read()
-        det, err = _detect_current(frame)
-        if err:
-            flash(f"Detection failed: {err}")
+
+        if calibration.load_homography() is None:
+            flash("Calibrate first - the editor places designs in real machine mm.")
             return redirect(url_for("design_page"))
+
+        frame = get_camera().read()
+        det, _ = _detect_current(frame)   # optional - editor works without a detection
 
         if ext == ".svg":
             with tempfile.NamedTemporaryFile(suffix=".svg", delete=False) as tmp_in:
                 design_file.save(tmp_in.name)
                 svg_tmp_path = tmp_in.name
             try:
-                aligned = align.align_and_clip(svg_tmp_path, det)
+                polylines, w_mm, h_mm = placement.load_svg_mm(svg_tmp_path)
             except ValueError as e:
-                flash(f"Alignment failed: {e}")
+                flash(f"Couldn't read that SVG: {e}")
                 return redirect(url_for("design_page"))
             finally:
                 Path(svg_tmp_path).unlink(missing_ok=True)
 
-            out_path = str(Path(tempfile.gettempdir()) / "laser_align_export.svg")
-            export.write_svg(
-                out_path, aligned, settings["bed_width_mm"], settings["bed_height_mm"],
-                flip_y=settings["flip_y"],
-            )
-            _last_export_path = out_path
-            _last_export_kind = "svg"
-            _last_placement_info = None
-            flash("Design aligned. Review below, then export.")
+            _place_polylines = polylines
+            _place_size_mm = (w_mm, h_mm)
+            _place_detection = det
+            ok, buf = cv2.imencode(".jpg", frame)
+            _place_bed_jpg = buf.tobytes()
+            _last_export_path = None
+            return redirect(url_for("design_place"))
 
         elif ext in PHOTO_EXTENSIONS:
+            if det is None:
+                flash("Photo alignment needs the workpiece detected - check the reference frame and bed.")
+                return redirect(url_for("design_page"))
             try:
                 aligned_photo = photo_align.align_photo(design_file.read(), det)
             except ValueError as e:
                 flash(f"Photo alignment failed: {e}")
                 return redirect(url_for("design_page"))
-
             out_path = str(Path(tempfile.gettempdir()) / "laser_align_export.png")
             photo_align.save_png(aligned_photo, out_path)
             _last_export_path = out_path
@@ -485,8 +495,9 @@ def design_page():
                 "height_mm": round(aligned_photo.height_mm, 1),
             }
             flash(
-                "Photo background removed and aligned. Rotation is already baked into "
-                "the image - set your machine's job origin to the target position shown below."
+                "Photo background removed and aligned. Rotation is baked into the image - "
+                "set your machine's job origin to the target position shown below. "
+                "(Hand-placement for photos is coming next; SVG designs get the editor now.)"
             )
         else:
             flash(f"Unsupported file type '{ext}' - use .svg, .png, or .jpg.")
@@ -494,10 +505,109 @@ def design_page():
 
     return render_template(
         "design.html",
+        has_calibration=calibration.load_homography() is not None,
+        has_placement=_place_polylines is not None,
         last_export=_last_export_path is not None,
         export_kind=_last_export_kind,
         placement=_last_placement_info,
     )
+
+
+@app.route("/design/place")
+def design_place():
+    if _place_polylines is None:
+        flash("Upload an SVG design first.")
+        return redirect(url_for("design_page"))
+    return render_template("design_editor.html", grbl_connected=_grbl is not None)
+
+
+@app.route("/design/bed.jpg")
+def design_bed():
+    if _place_bed_jpg is None:
+        return _jpeg_response(get_camera().read())
+    resp = Response(_place_bed_jpg, mimetype="image/jpeg")
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@app.route("/design/state.json")
+def design_state():
+    if _place_polylines is None:
+        return jsonify({"ok": False})
+    settings = config.load_settings()
+    H = calibration.load_homography()
+    H_inv = np.linalg.inv(H)
+    det = _place_detection
+    w_mm, h_mm = _place_size_mm
+    return jsonify({
+        "ok": True,
+        "polylines": _place_polylines,
+        "design_w_mm": round(w_mm, 2), "design_h_mm": round(h_mm, 2),
+        "bed_w_mm": settings["bed_width_mm"], "bed_h_mm": settings["bed_height_mm"],
+        "px_to_mm": H.flatten().tolist(),
+        "mm_to_px": H_inv.flatten().tolist(),
+        "detection": None if det is None else {
+            "contour_mm": det.contour_mm.tolist(),
+            "centroid_mm": list(det.centroid_mm),
+            "angle_deg": det.angle_deg,
+            "length_mm": det.length_mm, "width_mm": det.width_mm,
+        },
+    })
+
+
+@app.route("/design/rebed", methods=["POST"])
+def design_rebed():
+    """Re-grab the bed photo (and re-detect) without re-uploading the design."""
+    global _place_bed_jpg, _place_detection
+    frame = get_camera().read()
+    _place_detection, _ = _detect_current(frame)
+    ok, buf = cv2.imencode(".jpg", frame)
+    _place_bed_jpg = buf.tobytes()
+    return jsonify({"ok": True})
+
+
+@app.route("/design/place/export", methods=["POST"])
+def design_place_export():
+    global _last_export_path, _last_export_kind, _last_placement_info
+    if _place_polylines is None:
+        return jsonify({"ok": False, "error": "No design loaded."})
+    settings = config.load_settings()
+    try:
+        tx = float(request.form["tx_mm"]); ty = float(request.form["ty_mm"])
+        rot = float(request.form["rot_deg"]); scale = float(request.form["scale"])
+    except (KeyError, ValueError):
+        return jsonify({"ok": False, "error": "Bad transform values."})
+    clip = request.form.get("clip") == "1"
+    flip_x = request.form.get("flip_x") == "1"
+
+    placed = placement.place(_place_polylines, tx, ty, rot, scale, flip_x=flip_x)
+    if clip and _place_detection is not None:
+        placed = placement.clip_to_outline(placed, _place_detection.contour_mm)
+        if not placed:
+            return jsonify({"ok": False, "error": "Clipping left nothing - the design is entirely outside the piece."})
+
+    # round-trip guard: what we write must be centred where the editor asked
+    cx, cy = placement.polylines_bbox_center(placed)
+    if not clip and (abs(cx - tx) > 0.5 or abs(cy - ty) > 0.5):
+        return jsonify({"ok": False, "error":
+            f"Internal check failed: exported centre ({cx:.1f}, {cy:.1f}) != requested ({tx:.1f}, {ty:.1f})."})
+
+    aligned = placement.to_aligned_design(placed)
+    out_path = str(Path(tempfile.gettempdir()) / "laser_align_export.svg")
+    export.write_svg(out_path, aligned, settings["bed_width_mm"], settings["bed_height_mm"],
+                     flip_y=settings["flip_y"])
+    _last_export_path = out_path
+    _last_export_kind = "svg"
+    _last_placement_info = None
+
+    xs = [x for line in placed for x, _ in line]
+    ys = [y for line in placed for _, y in line]
+    return jsonify({
+        "ok": True,
+        "center_mm": [round(tx, 1), round(ty, 1)],
+        "bounds_mm": [round(min(xs), 1), round(min(ys), 1), round(max(xs), 1), round(max(ys), 1)],
+        "flip_y": settings["flip_y"],
+    })
 
 
 @app.route("/design/preview.jpg")
@@ -512,11 +622,11 @@ def design_preview():
 @app.route("/design/export")
 def design_export():
     if _last_export_path is None:
-        flash("Align a design first.")
+        flash("Align or place a design first.")
         return redirect(url_for("design_page"))
     if _last_export_kind == "png":
         return send_file(_last_export_path, mimetype="image/png", as_attachment=True, download_name="aligned_design.png")
-    return send_file(_last_export_path, mimetype="image/svg+xml", as_attachment=True, download_name="aligned_design.svg")
+    return send_file(_last_export_path, mimetype="image/svg+xml", as_attachment=True, download_name="placed_design.svg")
 
 
 @app.route("/live/snapshot.jpg")

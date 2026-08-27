@@ -524,6 +524,28 @@ both 200) before restarting the server.
   doesn't parse, it's very often worth interpreting it in light of the immediately
   preceding topic rather than taking it literally.
 
+## Placement editor - SVG hand-placement built (2026-08-27)
+
+`laser_align/placement.py` + `templates/design_editor.html` + `/design/place*` routes.
+Upload an SVG on Design & Export -> `placement.load_svg_mm` parses it into origin-centred
+millimetre polylines (Y negated: SVG-down -> machine-up) -> the editor draws it on a
+frozen bed photo, projected design-mm -> machine-mm -> camera-pixel through the saved
+homography (`mm_to_px` = `inv(H)`), so it's WYSIWYG on the real bed. Drag / rotate handle
+/ scale handle, or type exact X / Y / W / H / angle mm; "Fit to piece" snaps to the
+detected centroid + angle + a scale that fits the oriented bbox; clip-to-outline toggle
+uses `placement.clip_to_outline` (shapely). Export applies `placement.place(...)` and
+writes an absolute-mm SVG via the existing `export.write_svg` (with `settings["flip_y"]`),
+after a round-trip guard that the exported bbox centre == the requested (tx, ty). Editor
+state lives in module globals (`_place_polylines` etc.), like the rest of app.py.
+
+**Verified in-session**: SVG parse, auto-fit, drag (updates tx/ty in mm correctly through
+the homography even though this machine's X is vertical / inverted in the image), numeric
+fields, export round-trip, download. Rendered correctly on the real bed photo.
+
+**Still to do**: one test SVG import into LightBurn to settle `flip_y`; the photo/raster
+path in the editor + its LaserGRBL position card; PNG-line-art -> SVG tracing; the
+background-removal rework.
+
 ## Planned next: placement editor + background-removal rework (2026-08-27)
 
 Design proposal in `docs/manual_placement_and_bg_removal_plan.md`. **Progress:** the

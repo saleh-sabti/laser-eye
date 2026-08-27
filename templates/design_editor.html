@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Place &amp; Export</h1>
+
+<div class="card">
+  <h2>🖐️ Place the design on the piece</h2>
+  <p>Drag to move · the round handle rotates · the square handle scales · or type exact
+  numbers below. "Fit to piece" snaps it inside the detected outline. Export writes an SVG
+  in absolute machine mm - it burns exactly where you put it.</p>
+
+  <p class="hint" id="det-note"></p>
+
+  <div class="viewfinder" style="width:100%;">
+    <img id="bed" class="frame" style="width:100%; display:block;" src="{{ url_for('design_bed') }}">
+    <canvas id="cv" style="position:absolute; inset:0; cursor:grab;"></canvas>
+  </div>
+
+  <div class="btn-row" style="margin-top:0.8rem;">
+    <button type="button" class="btn" onclick="fitToPiece()">⤢ Fit to piece</button>
+    <button type="button" class="btn" onclick="matchRotation()">⟳ Match piece rotation</button>
+    <button type="button" class="btn" onclick="centerBed()">⊕ Centre on bed</button>
+    <button type="button" class="btn" onclick="toggleFlip()">⇄ Flip</button>
+    <button type="button" class="btn" onclick="rebed()">🔄 New bed photo</button>
+  </div>
+
+  <div class="btn-row" style="margin-top:0.8rem; align-items:flex-end;">
+    <label style="margin:0;">X centre (mm)<input type="number" step="0.5" id="f-x"></label>
+    <label style="margin:0;">Y centre (mm)<input type="number" step="0.5" id="f-y"></label>
+    <label style="margin:0;">Width (mm)<input type="number" step="0.5" id="f-w"></label>
+    <label style="margin:0;">Height (mm)<input type="number" step="0.5" id="f-h"></label>
+    <label style="margin:0;">Angle (°)<input type="number" step="1" id="f-a"></label>
+  </div>
+
+  <label style="display:flex; align-items:center; gap:0.5rem; margin-top:0.9rem;">
+    <input type="checkbox" id="f-clip" style="width:auto; margin:0;">
+    Clip the design to inside the piece outline (−1.5 mm)
+  </label>
+  <p class="hint" id="warn" style="color:var(--danger-text);"></p>
+</div>
+
+<div class="card">
+  <h2>📦 Export</h2>
+  <div class="btn-row">
+    <button type="button" class="btn primary" onclick="doExport()">💾 Build the SVG</button>
+    <a class="btn" id="dl" href="{{ url_for('design_export') }}" style="display:none;">⬇️ Download placed_design.svg</a>
+  </div>
+  <p class="hint" id="exp-note"></p>
+  <p class="hint">Open it in LightBurn with <strong>Absolute Coords</strong>. If it lands
+  mirrored top-to-bottom, turn on <em>Flip Y on SVG export</em> in Settings and rebuild.</p>
+</div>
+
+<script>
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const bed = document.getElementById('bed');
+let S = null;            // state.json
+let T = { tx: 0, ty: 0, rot: 0, scale: 1, flipX: false };
+let drag = null;
+const DPR = window.devicePixelRatio || 1;
+
+function proj(m, x, y) {   // 3x3 row-major projective transform
+  const w = m[6]*x + m[7]*y + m[8];
+  return [(m[0]*x + m[1]*y + m[2]) / w, (m[3]*x + m[4]*y + m[5]) / w];
+}
+// mm -> canvas px  /  canvas px -> mm
+function mm2cv(mx, my) {
+  const [px, py] = proj(S.mm_to_px, mx, my);
+  return [px * cv.clientWidth / bed.naturalWidth, py * cv.clientHeight / bed.naturalHeight];
+}
+function cv2mm(cx, cy) {
+  const px = cx * bed.naturalWidth / cv.clientWidth, py = cy * bed.naturalHeight / cv.clientHeight;
+  return proj(S.px_to_mm, px, py);
+}
+
+function placePt(x, y) {   // origin-centred design mm -> placed machine mm
+  const a = T.rot * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a);
+  const sx = (T.flipX ? -1 : 1) * T.scale;
+  const x2 = x * sx, y2 = y * T.scale;
+  return [x2*ca - y2*sa + T.tx, x2*sa + y2*ca + T.ty];
+}
+
+function resize() {
+  cv.width = bed.clientWidth * DPR; cv.height = bed.clientHeight * DPR;
+  cv.style.width = bed.clientWidth + 'px'; cv.style.height = bed.clientHeight + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  render();
+}
+
+function render() {
+  if (!S) return;
+  ctx.clearRect(0, 0, cv.clientWidth, cv.clientHeight);
+
+  if (S.detection) {
+    ctx.strokeStyle = '#00C853'; ctx.lineWidth = 2; ctx.beginPath();
+    S.detection.contour_mm.forEach(([mx, my], i) => {
+      const [cx, cy] = mm2cv(mx, my); i ? ctx.lineTo(cx, cy) : ctx.moveTo(cx, cy);
+    });
+    ctx.closePath(); ctx.stroke();
+  }
+
+  ctx.strokeStyle = '#FF6B6B'; ctx.lineWidth = 2;
+  for (const line of S.polylines) {
+    ctx.beginPath();
+    line.forEach(([x, y], i) => {
+      const [mx, my] = placePt(x, y); const [cx, cy] = mm2cv(mx, my);
+      i ? ctx.lineTo(cx, cy) : ctx.moveTo(cx, cy);
+    });
+    ctx.stroke();
+  }
+
+  // handles
+  const [ox, oy] = mm2cv(T.tx, T.ty);
+  const rh = handleCv('rot'), sh = handleCv('scale');
+  ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(rh[0], rh[1]); ctx.stroke();
+  dot(ox, oy, '#FF6B6B', true);
+  dot(rh[0], rh[1], '#FFD93D', false, true);
+  dot(sh[0], sh[1], '#C4B5FD', false);
+}
+function dot(x, y, fill, cross, circle) {
+  ctx.fillStyle = fill; ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  if (circle) ctx.arc(x, y, 7, 0, 7); else ctx.rect(x-6, y-6, 12, 12);
+  ctx.fill(); ctx.stroke();
+  if (cross) { ctx.beginPath(); ctx.moveTo(x-10,y); ctx.lineTo(x+10,y); ctx.moveTo(x,y-10); ctx.lineTo(x,y+10); ctx.stroke(); }
+}
+function handleCv(which) {
+  // rotate handle: above the design centre; scale handle: design's +x/+y corner
+  const hw = S.design_w_mm / 2, hh = S.design_h_mm / 2;
+  if (which === 'rot') { const [x,y] = placeLocal(0, hh + 14); return mm2cv(x, y); }
+  const [x, y] = placeLocal(hw, hh); return mm2cv(x, y);
+}
+function placeLocal(x, y) {   // like placePt but for handle offsets (respects rot/scale/flip)
+  return placePt(x, y);
+}
+
+function updateFields() {
+  document.getElementById('f-x').value = T.tx.toFixed(1);
+  document.getElementById('f-y').value = T.ty.toFixed(1);
+  document.getElementById('f-w').value = (S.design_w_mm * T.scale).toFixed(1);
+  document.getElementById('f-h').value = (S.design_h_mm * T.scale).toFixed(1);
+  document.getElementById('f-a').value = T.rot.toFixed(0);
+  checkBounds();
+}
+function checkBounds() {
+  let out = false;
+  for (const line of S.polylines) for (const [x, y] of line) {
+    const [mx, my] = placePt(x, y);
+    if (mx < 0 || my < 0 || mx > S.bed_w_mm || my > S.bed_h_mm) out = true;
+  }
+  document.getElementById('warn').textContent = out ? 'Part of the design is off the bed.' : '';
+}
+
+// ---- interaction ----
+function evPos(e) {
+  const r = cv.getBoundingClientRect();
+  return [ (e.touches ? e.touches[0].clientX : e.clientX) - r.left,
+           (e.touches ? e.touches[0].clientY : e.clientY) - r.top ];
+}
+function near(p, h, d) { return Math.hypot(p[0]-h[0], p[1]-h[1]) < d; }
+
+cv.addEventListener('mousedown', (e) => {
+  const p = evPos(e);
+  const o = mm2cv(T.tx, T.ty), rh = handleCv('rot'), sh = handleCv('scale');
+  if (near(p, rh, 14)) drag = { mode: 'rot' };
+  else if (near(p, sh, 14)) drag = { mode: 'scale', s0: T.scale, d0: Math.hypot(p[0]-o[0], p[1]-o[1]) || 1 };
+  else drag = { mode: 'move', m0: cv2mm(p[0], p[1]), tx0: T.tx, ty0: T.ty };
+  cv.style.cursor = 'grabbing';
+});
+window.addEventListener('mousemove', (e) => {
+  if (!drag) return;
+  const p = evPos(e), o = mm2cv(T.tx, T.ty);
+  if (drag.mode === 'move') {
+    const m = cv2mm(p[0], p[1]);
+    T.tx = drag.tx0 + (m[0] - drag.m0[0]);
+    T.ty = drag.ty0 + (m[1] - drag.m0[1]);
+  } else if (drag.mode === 'rot') {
+    const mm = cv2mm(p[0], p[1]);
+    T.rot = Math.atan2(mm[1] - T.ty, mm[0] - T.tx) * 180 / Math.PI - 90;
+  } else if (drag.mode === 'scale') {
+    const d = Math.hypot(p[0]-o[0], p[1]-o[1]);
+    T.scale = Math.max(0.02, drag.s0 * d / drag.d0);
+  }
+  render(); updateFields();
+});
+window.addEventListener('mouseup', () => { drag = null; cv.style.cursor = 'grab'; });
+
+for (const [id, fn] of [
+  ['f-x', v => T.tx = v], ['f-y', v => T.ty = v], ['f-a', v => T.rot = v],
+  ['f-w', v => T.scale = v / S.design_w_mm], ['f-h', v => T.scale = v / S.design_h_mm],
+]) {
+  document.getElementById(id).addEventListener('change', (e) => {
+    const v = parseFloat(e.target.value); if (!isNaN(v)) { fn(v); render(); updateFields(); }
+  });
+}
+
+function fitToPiece() {
+  if (!S.detection) return;
+  const d = S.detection;
+  T.tx = d.centroid_mm[0]; T.ty = d.centroid_mm[1]; T.rot = d.angle_deg;
+  // scale so the design's footprint fits the piece's oriented bbox (minus margin)
+  const fit = Math.min((d.length_mm - 4) / S.design_w_mm, (d.width_mm - 4) / S.design_h_mm);
+  T.scale = Math.max(0.05, fit);
+  render(); updateFields();
+}
+function matchRotation() { if (S.detection) { T.rot = S.detection.angle_deg; render(); updateFields(); } }
+function centerBed() { T.tx = S.bed_w_mm / 2; T.ty = S.bed_h_mm / 2; render(); updateFields(); }
+function toggleFlip() { T.flipX = !T.flipX; render(); updateFields(); }
+
+function rebed() {
+  fetch('{{ url_for("design_rebed") }}', { method: 'POST' }).then(() => {
+    bed.src = '{{ url_for("design_bed") }}?t=' + Date.now();
+    return fetch('{{ url_for("design_state") }}').then(r => r.json());
+  }).then(d => { S = d; drawDetNote(); render(); });
+}
+
+function doExport() {
+  const body = new URLSearchParams({
+    tx_mm: T.tx, ty_mm: T.ty, rot_deg: T.rot, scale: T.scale,
+    clip: document.getElementById('f-clip').checked ? '1' : '0',
+    flip_x: T.flipX ? '1' : '0',
+  });
+  fetch('{{ url_for("design_place_export") }}', { method: 'POST', body })
+    .then(r => r.json()).then(d => {
+      const note = document.getElementById('exp-note');
+      if (!d.ok) { note.textContent = d.error; note.style.color = 'var(--danger-text)'; return; }
+      note.style.color = 'var(--text-muted)';
+      note.innerHTML = `Centre <strong>X ${d.center_mm[0]}, Y ${d.center_mm[1]} mm</strong> · `
+        + `bounds ${d.bounds_mm[0]}–${d.bounds_mm[2]} × ${d.bounds_mm[1]}–${d.bounds_mm[3]} mm`
+        + (d.flip_y ? ' · Flip Y is on' : '');
+      const dl = document.getElementById('dl');
+      dl.style.display = 'inline-flex'; dl.href = '{{ url_for("design_export") }}?t=' + Date.now();
+    });
+}
+
+function drawDetNote() {
+  const n = document.getElementById('det-note');
+  if (S.detection) {
+    n.textContent = `Piece detected: ${S.detection.length_mm.toFixed(0)} × ${S.detection.width_mm.toFixed(0)} mm `
+      + `at (${S.detection.centroid_mm[0].toFixed(0)}, ${S.detection.centroid_mm[1].toFixed(0)}), ${S.detection.angle_deg.toFixed(0)}°.`;
+    n.style.color = 'var(--text-muted)';
+  } else {
+    n.textContent = 'No workpiece detected - place the design by hand or against the bed grid. '
+      + '(Capture an empty-bed reference frame on Live View to enable auto-fit and clipping.)';
+    n.style.color = 'var(--text-muted)';
+  }
+}
+
+fetch('{{ url_for("design_state") }}').then(r => r.json()).then(d => {
+  if (!d.ok) { location.href = '{{ url_for("design_page") }}'; return; }
+  S = d;
+  drawDetNote();
+  if (S.detection) fitToPiece(); else centerBed();
+  if (bed.complete) resize(); else bed.addEventListener('load', resize);
+});
+window.addEventListener('resize', resize);
+</script>
+{% endblock %}
