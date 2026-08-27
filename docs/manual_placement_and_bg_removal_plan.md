@@ -258,20 +258,21 @@ then threshold slider + alpha-matting toggle + method picker + brush.
 
 ## Build order
 
-1. **`flip_y` into settings + Settings toggle + pass it through `write_svg`.**
-   *(unblocks everything else — the placement editor is not trustworthy until the
-   coordinate convention is settled)*
-2. **`/bed/rectified.jpg` endpoint + "jog head to clicked point"** — reusable, and
-   immediately diagnoses the "red cross is wrong" complaint on its own.
-3. **User runs the one-time checks**: redo calibration if the rectified bed looks off;
-   jog-to-point to confirm the mapping; one test SVG import into LightBurn for `flip_y`.
+1. ✅ **`flip_y` into settings + Settings toggle + pass it through `write_svg`.**
+2. ✅ **Click-to-jog check** — done on Live View (`/live/jog_to_point`), against the raw
+   camera feed via `pixels_to_mm`. A standalone rectified "Bed View" page was tried and
+   pulled: with a bad calibration the warp just looks crooked, and the raw feed is more
+   legible. The rectified approach is still the right call for the *editor* below (a
+   design dragged on a perspective view would change real size as it moves) — rebuild
+   `rectify.py` then.
+3. **User runs the one-time checks**: redo calibration (currently badly off — click-to-
+   jog reports bed-centre as ~1256 mm); one test SVG import into LightBurn for `flip_y`.
 4. **Placement editor** — rectified bed canvas, auto-fit mode + manual mode, clip
    toggle, numeric panel, transform round-trip assertion on export.
 5. **Raster Position Card** — size + jog-to-corner button + LaserGRBL steps; verify the
    LightBurn embedded-image SVG path separately.
 6. **Background removal** — binarize + largest-component + smoothing, then progress
    indicator, then brush, then (optional) Gemini method.
-7. **Housekeeping** (below).
 
 ---
 
@@ -280,11 +281,11 @@ then threshold slider + alpha-matting toggle + method picker + brush.
 - ✅ Plan + `printables/` + `screenshots/` committed; `context.md` updated; pushed.
 - ✅ Neubrutalist white UI merged to `main` (`e204ca3` + merge `34c03ba`); the
   `nervous-lalande-bda051` worktree and branch removed.
-- ✅ README media refreshed to the new UI (`ui-dashboard.jpg`, `ui-calibration.jpg`,
-  `bed-view-rectified.jpg`); stale old-UI `demo.gif` / `design-export.png` /
-  `screen-recording.gif` removed; design-log entries added for the redesign, the
-  ArUco-only switch, and Bed View.
-- ⬜ User has newer screen recordings to add to the README — waiting on the files.
+- ✅ README media refreshed: new-UI GIFs (`demo.gif`, `live-view.gif`) cut from the
+  user's screen recordings, plus `ui-calibration.jpg`; stale old-UI media and the weak
+  first-pass screenshots removed; design-log entries added for the redesign, the
+  ArUco-only switch, and the coordinate-check work.
+- ⬜ Swap in fresh GIFs once calibration is redone (current ones show garbage mm labels).
 
 ---
 

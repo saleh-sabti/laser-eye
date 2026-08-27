@@ -11,15 +11,11 @@ jogging the head around and eyeballing the alignment. This fixes that: point a w
 the bed, and it figures out where your workpiece actually is - the real outline, not
 just a rough box - and lines your design up automatically.
 
-![Dashboard - system status at a glance](docs/ui-dashboard.jpg)
+![Placing a piece on the bed - the detected outline tracks it live](docs/demo.gif)
 
-*The dashboard: camera, calibration, and reference-frame status in one place.*
-
-![Bed View - the camera frame warped straight overhead](docs/bed-view-rectified.jpg)
-
-*Bed View warps the camera frame to a true top-down image using the calibration, so
-screen position maps straight to machine mm - the basis for placing a design exactly
-where it'll burn.*
+*Live View: drop a piece on the bed and the detected outline follows it in real time,
+re-forming as it's moved. No manual jogging. (The mm labels here are off - the
+calibration in this clip is stale; the outline tracking is the point.)*
 
 ## How it works
 
@@ -35,9 +31,9 @@ something got placed.
 - Aligns an uploaded **photo**: background removed automatically, rotated to match the
   workpiece's orientation, exported as a plain PNG (with the target position reported),
   since raster laser software burns images axis-aligned with no rotation of its own.
-- **Bed View** - a live top-down (rectified) render of the bed, where screen position is
-  real machine mm. Click any point to jog the head there and confirm the mapping is right
-  without firing the laser.
+- **Click-to-jog check** on Live View - click any point on the camera feed and the head
+  jogs there, so you can confirm the app's mm actually match the real bed (never fires
+  the laser).
 - **Calibration is ArUco-only**: print the four markers (there's a one-page PDF built in),
   fix them at the bed corners, register each corner's machine position once, and
   "Calibrate now" re-fits the homography and the bed area from whatever's in frame. No
@@ -215,22 +211,18 @@ marker's *reference corner* so the point you jog to and the point the app detect
 physically the same spot, sub-pixel corner detection, and "Calibrate now" also setting
 the bed area from the four markers in the same pass.
 
-**Bed View: a rectified top-down render, and the coordinate convention it forced.**
+**Checking the coordinate convention without firing the laser.**
 Placing a design "exactly where it burns" is only meaningful if the app's millimetres
-match the real bed's. Bed View warps the camera frame straight overhead
-(`cv2.warpPerspective` through the calibration homography) so screen position is machine
-mm by a single scalar - which also makes a bad calibration *visible* (a sheared or bowed
-bed is the homography, not the thing drawn on top of it). Click-to-jog moves the head to
-a clicked point so you can check the mapping against the real machine, no laser fired.
-This also surfaced that the SVG export's Y-axis convention versus LightBurn's workspace
-origin had never been verified against a real burn - now a `flip_y` setting, to be
-confirmed once against an import rather than assumed.
-
-![Bed View - detected outline drawn in real mm over the rectified bed, with a 50 mm reference grid](docs/bed-view-rectified.jpg)
-
-*The rectified bed with the detected outline drawn straight in mm (no re-warping) and a
-50 mm grid. The jagged outline here is a separate, still-open detection-quality issue -
-the geometry underneath it is what Bed View is for.*
+match the real bed's. First attempt was a "Bed View" page that warped the camera frame
+straight overhead (`cv2.warpPerspective` through the homography) so screen position was
+machine mm by a single scalar. Pulled it: with a bad calibration the rectified bed just
+looks crooked and unhelpful, and working on the raw camera feed is more legible. What
+stayed is the useful half - **click any point on the Live View feed and the head jogs
+there**, running the click through the same homography as everything else. It exposes a
+bad calibration immediately (clicking bed-centre currently reports ~1256 mm). This work
+also surfaced that the SVG export's Y-axis convention versus LightBurn's workspace origin
+had never been verified against a real burn - now a `flip_y` setting, to be confirmed
+once against an import rather than assumed.
 
 **Full UI redesign - from a soft "editorial" theme to a hard machine-panel look.**
 The earlier UI leaned warm and typographic (serif display face, parchment background,
@@ -264,9 +256,8 @@ Then open `http://localhost:5000`. First time through: set your camera and bed s
 Settings; print the ArUco marker sheet from the Calibration page and fix one marker at
 each bed corner; register each marker's machine position once (jog to its bracketed
 corner, read the X/Y, enter it); capture an empty-bed reference photo from Live View;
-then hit "Calibrate now". After that it's just Design & Export (and Bed View to place
-things by hand) for every job - and one click on "Calibrate now" any time the camera
-gets bumped.
+then hit "Calibrate now". After that it's just Design & Export for every job - and one
+click on "Calibrate now" any time the camera gets bumped.
 
 RF-DETR needs its own CUDA-matched PyTorch install if you want to use it - see
 `CLAUDE.md` for the exact commands.

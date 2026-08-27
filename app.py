@@ -10,9 +10,10 @@ import time
 from pathlib import Path
 
 import cv2
+import numpy as np
 from flask import Flask, Response, render_template, request, redirect, url_for, send_file, flash, jsonify
 
-from laser_align import config, calibration, detection, align, export, photo_align, dataset, rfdetr_detect, grbl, aruco_calibration, rectify
+from laser_align import config, calibration, detection, align, export, photo_align, dataset, rfdetr_detect, grbl, aruco_calibration
 from laser_align.camera import Camera, probe_devices
 from laser_align.calibration import CalibrationError
 from laser_align.detection import NoReferenceFrameError, NoObjectFoundError
@@ -319,7 +320,12 @@ def grbl_position():
 
 @app.route("/live")
 def live_page():
-    return render_template("live.html", has_reference=detection.has_reference_frame())
+    return render_template(
+        "live.html",
+        has_reference=detection.has_reference_frame(),
+        has_calibration=calibration.load_homography() is not None,
+        grbl_connected=_grbl is not None,
+    )
 
 
 @app.route("/training")
@@ -500,62 +506,40 @@ def design_export():
     return send_file(_last_export_path, mimetype="image/svg+xml", as_attachment=True, download_name="aligned_design.svg")
 
 
-@app.route("/bed")
-def bed_page():
-    settings = config.load_settings()
-    return render_template(
-        "bed.html",
-        settings=settings,
-        has_calibration=calibration.load_homography() is not None,
-        has_reference=detection.has_reference_frame(),
-        px_per_mm=rectify.DEFAULT_PX_PER_MM,
-        grbl_connected=_grbl is not None,
-    )
-
-
-@app.route("/bed/rectified.jpg")
-def bed_rectified():
-    settings = config.load_settings()
-    homography = calibration.load_homography()
-    frame = get_camera().read()
-    if homography is None:
-        # nothing to warp against yet - hand back the raw frame with a note
-        cv2.putText(frame, "Not calibrated - see Calibration page", (12, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
-        return _jpeg_response(frame)
-
-    bed_w, bed_h = settings["bed_width_mm"], settings["bed_height_mm"]
-    ppm = rectify.DEFAULT_PX_PER_MM
-    view = rectify.rectify_frame(frame, homography, bed_w, bed_h, ppm)
-    view = rectify.draw_grid(view, bed_w, bed_h, ppm)
-
-    det, _ = _detect_current(frame)
-    if det is not None:
-        view = rectify.draw_mm_polyline(view, det.contour_mm, bed_h, ppm, color=(0, 220, 0), thickness=2)
-        cx, cy = rectify.mm_to_view_px(det.centroid_mm[0], det.centroid_mm[1], bed_h, ppm)
-        cv2.drawMarker(view, (int(cx), int(cy)), (0, 0, 255), cv2.MARKER_CROSS, 18, 2)
-        label = f"{det.length_mm:.0f} x {det.width_mm:.0f} mm  @ ({det.centroid_mm[0]:.0f}, {det.centroid_mm[1]:.0f})"
-        cv2.putText(view, label, (int(cx) + 10, int(cy) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 3, cv2.LINE_AA)
-        cv2.putText(view, label, (int(cx) + 10, int(cy) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1, cv2.LINE_AA)
-    return _jpeg_response(view)
-
-
-@app.route("/bed/jog_to_point", methods=["POST"])
-def bed_jog_to_point():
-    """Jog the head to a point clicked on the rectified bed view - the
+@app.route("/live/jog_to_point", methods=["POST"])
+def live_jog_to_point():
+    """Click a point on the live camera feed -> jog the head there. The
     honest end-to-end check that a clicked spot maps to the real machine
-    position it claims. Reuses the calibration jog connection; never fires
-    the laser.
+    position it claims (calibration is right / the coordinate convention
+    holds). Reuses the calibration jog connection; never fires the laser.
+
+    Takes camera-pixel coordinates and runs them through the same
+    homography everything else uses, so no separate rectified view is
+    needed.
     """
+    homography = calibration.load_homography()
+    if homography is None:
+        return jsonify({"ok": False, "error": "Not calibrated yet - see the Calibration page."})
     try:
-        x_mm = float(request.form["x_mm"])
-        y_mm = float(request.form["y_mm"])
+        px = float(request.form["px"])
+        py = float(request.form["py"])
     except (KeyError, ValueError):
-        return jsonify({"ok": False, "error": "Missing or bad coordinates."})
+        return jsonify({"ok": False, "error": "Missing or bad pixel coordinates."})
+
+    x_mm, y_mm = calibration.pixels_to_mm(homography, np.array([[px, py]]))[0]
+    x_mm, y_mm = float(x_mm), float(y_mm)
+
     settings = config.load_settings()
     bed_w, bed_h = settings["bed_width_mm"], settings["bed_height_mm"]
-    if not (0 <= x_mm <= bed_w) or not (0 <= y_mm <= bed_h):
-        return jsonify({"ok": False, "error": f"({x_mm:.0f}, {y_mm:.0f}) mm is outside the bed."})
+    margin = 15.0
+    if not (-margin <= x_mm <= bed_w + margin) or not (-margin <= y_mm <= bed_h + margin):
+        return jsonify({
+            "ok": False,
+            "error": f"That maps to ({x_mm:.0f}, {y_mm:.0f}) mm - outside the "
+                     f"{bed_w:.0f}x{bed_h:.0f}mm bed. Bad calibration, or you clicked off the bed.",
+            "x_mm": round(x_mm, 1), "y_mm": round(y_mm, 1),
+        })
+
     result = _grbl_call(lambda g: g.jog_to(x_mm, y_mm))
     result["x_mm"] = round(x_mm, 1)
     result["y_mm"] = round(y_mm, 1)

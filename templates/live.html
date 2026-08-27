@@ -16,6 +16,106 @@
   <h2><span class="live-dot"></span> Camera feed</h2>
   <p>Live feed with the detected outline (green) and centroid (red cross) overlaid, when
   calibration and a reference frame are available.</p>
-  <div class="viewfinder"><img class="frame" src="{{ url_for('live_stream') }}"></div>
+  <div class="viewfinder">
+    <img id="feed" class="frame" style="cursor:crosshair;" src="{{ url_for('live_stream') }}">
+    <div id="pin" style="position:absolute; width:14px; height:14px; margin:-7px 0 0 -7px;
+         border:3px solid var(--accent); background:var(--accent-soft);
+         display:none; pointer-events:none;"></div>
+  </div>
 </div>
+
+<div class="card">
+  <h2>📍 Click to check placement</h2>
+  <p>Click a spot on the feed above, then jog the head there. The head physically moves -
+  look at the machine and confirm it lands where you clicked. This is the end-to-end check
+  that the app's mm match the real bed. Never fires the laser.</p>
+
+  {% if not has_calibration %}
+  <div class="flash" style="background:var(--danger-bg);">
+    Not calibrated yet - <a href="{{ url_for('calibration_page') }}">calibrate first</a>.
+  </div>
+  {% endif %}
+
+  <p class="hint">Clicked point: <span id="pt" class="pixel-readout">(click the feed)</span></p>
+
+  <div class="btn-row">
+    {% if grbl_connected %}
+    <form method="post" action="{{ url_for('grbl_disconnect') }}" onsubmit="setTimeout(()=>location.reload(),300)">
+      <button type="submit" class="btn">⏏️ Disconnect machine</button>
+    </form>
+    {% else %}
+    <form method="post" action="{{ url_for('grbl_connect') }}" onsubmit="setTimeout(()=>location.reload(),1500)">
+      <button type="submit" class="btn primary">🔌 Connect machine</button>
+    </form>
+    {% endif %}
+    <button type="button" class="btn primary" id="jogbtn" disabled onclick="jogToPin()">
+      🎯 Jog head to clicked point
+    </button>
+  </div>
+  <p class="hint">Machine position: <span id="pos">not connected</span></p>
+  <div id="alarm" class="flash" style="display:none; background:var(--danger-bg);">
+    ⚠️ ALARM - clear it with Unlock or Home on the
+    <a href="{{ url_for('calibration_page') }}">Calibration</a> page before jogging again.
+  </div>
+</div>
+
+<script>
+const feed = document.getElementById('feed');
+const pin = document.getElementById('pin');
+let picked = null;
+
+function placePin() {
+  if (!picked) { pin.style.display = 'none'; return; }
+  const rect = feed.getBoundingClientRect();
+  pin.style.left = (picked.px / feed.naturalWidth * rect.width) + 'px';
+  pin.style.top = (picked.py / feed.naturalHeight * rect.height) + 'px';
+  pin.style.display = 'block';
+}
+
+feed.addEventListener('click', (e) => {
+  if (!feed.naturalWidth) return;
+  const rect = feed.getBoundingClientRect();
+  const px = (e.clientX - rect.left) * (feed.naturalWidth / rect.width);
+  const py = (e.clientY - rect.top) * (feed.naturalHeight / rect.height);
+  picked = { px, py };
+  document.getElementById('pt').textContent = `pixel (${px.toFixed(0)}, ${py.toFixed(0)})`;
+  document.getElementById('jogbtn').disabled = false;
+  placePin();
+});
+window.addEventListener('resize', placePin);
+
+function jogToPin() {
+  if (!picked) return;
+  const btn = document.getElementById('jogbtn');
+  btn.disabled = true;
+  const body = new URLSearchParams({ px: picked.px, py: picked.py });
+  fetch('{{ url_for("live_jog_to_point") }}', { method: 'POST', body: body })
+    .then(r => r.json())
+    .then(data => {
+      btn.disabled = false;
+      if (data.x_mm !== undefined) {
+        document.getElementById('pt').textContent =
+          `pixel (${picked.px.toFixed(0)}, ${picked.py.toFixed(0)})  ->  X ${data.x_mm} mm, Y ${data.y_mm} mm`;
+      }
+      if (!data.ok) {
+        if (data.alarm) document.getElementById('alarm').style.display = 'block';
+        else alert('Jog failed: ' + data.error);
+      }
+      refreshPos();
+    })
+    .catch(() => { btn.disabled = false; });
+}
+
+function refreshPos() {
+  fetch('{{ url_for("grbl_position") }}').then(r => r.json()).then(data => {
+    const el = document.getElementById('pos');
+    if (!data.connected) { el.textContent = 'not connected'; return; }
+    if (data.error) { el.textContent = 'error: ' + data.error; return; }
+    el.textContent = `X ${data.x} mm, Y ${data.y} mm (${data.state})`;
+    document.getElementById('alarm').style.display = data.state === 'Alarm' ? 'block' : 'none';
+  });
+}
+setInterval(refreshPos, 1500);
+refreshPos();
+</script>
 {% endblock %}

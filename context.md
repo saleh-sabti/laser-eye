@@ -387,8 +387,8 @@ was merged to `main` on 2026-08-27 (commit `e204ca3` + merge `34c03ba`); the wor
 branch were then removed.
 
 Pages: Dashboard, Settings (camera/bed/detection-method/GRBL-port/`flip_y` config),
-Calibration (ArUco marker setup + PDF sheet + direct GRBL jog panel), Live View, Bed View
-(rectified top-down + click-to-jog), Design & Export, Training Data (RF-DETR dataset
+Calibration (ArUco marker setup + PDF sheet + direct GRBL jog panel), Live View (feed +
+click-to-jog placement check), Design & Export, Training Data (RF-DETR dataset
 collection).
 
 **Manual point-clicking calibration was removed entirely in the same redesign.**
@@ -403,13 +403,17 @@ detected marker corners in the same call. `calibration.py` still defines `Calibr
 / `find_duplicate_conflict` / `MIN_POINTS` - unused by the app now but kept (the
 compute/save/guard code still uses them internally).
 
-**Bed View (`templates/bed.html`, `laser_align/rectify.py`, `/bed*` routes).** Warps the
-live camera frame to a true top-down image via `S @ H` (`S` scales to `px_per_mm` and
-flips Y so machine Y points up). `view_px_to_mm` / `mm_to_view_px` are the scalar
-conversions; `draw_mm_polyline` draws the detected outline straight in mm with no
-re-warping; `draw_grid` adds a labelled 50 mm grid. `/bed/jog_to_point` reuses
-`_grbl_call(g.jog_to(...))` - same jog-only connection as calibration, never fires the
-laser. This is the foundation for the not-yet-built placement editor (see the plan doc).
+**Click-to-jog placement check (Live View).** Briefly built as a separate "Bed View"
+page with a rectified (`cv2.warpPerspective`) top-down render, then removed the same day
+on user feedback: with the current bad calibration the warped bed looked visibly crooked
+and unhelpful, and the user preferred working on the raw camera feed. What survived is
+the useful half - `/live/jog_to_point` takes a clicked *camera pixel*, runs it through
+`calibration.pixels_to_mm` (the same homography as everything else - no rectified view
+needed), and jogs the head there via `_grbl_call(g.jog_to(...))` (jog-only connection,
+never fires the laser). Live View got a compact GRBL connect/position panel for this.
+It immediately exposes bad calibration: clicking bed-centre currently reports ~1256 mm.
+`laser_align/rectify.py` and `templates/bed.html` were deleted; the rectification
+approach is still documented in the plan doc for the eventual placement editor.
 
 **Calibration page decluttered, reference-frame capture moved to Live View
 (2026-08-22).** Two user complaints once ArUco calibration (above) existed alongside the
@@ -493,10 +497,11 @@ both 200) before restarting the server.
 
 ## Planned next: placement editor + background-removal rework (2026-08-27)
 
-Design proposal in `docs/manual_placement_and_bg_removal_plan.md`. **Progress:** Bed View
-(rectified top-down + click-to-jog) and the `flip_y` setting are built and on `main`. The
-placement editor itself (auto-fit + manual drag), the LaserGRBL Position Card, and the
-background-removal rework are still to do. Summary of what was decided:
+Design proposal in `docs/manual_placement_and_bg_removal_plan.md`. **Progress:** the
+`flip_y` setting and a **click-to-jog placement check on Live View** are built and on
+`main` (a standalone rectified "Bed View" page was tried and pulled - see the UI
+section). The placement editor itself (auto-fit + manual drag), the LaserGRBL Position
+Card, and the background-removal rework are still to do. Summary of what was decided:
 
 - **Placement editor** on a *rectified* (top-down, `cv2.warpPerspective(frame, S @ H,
   ...)`) view of the bed, so all in-browser placement math is affine, not perspective.
@@ -533,7 +538,10 @@ background-removal rework are still to do. Summary of what was decided:
   raster; needs `GEMINI_API_KEY` + internet, clearly marked, local rembg stays default.
 - Still no real end-to-end burn - the user is waiting on the placement/positioning
   story to be trustworthy first.
-- README media refreshed to the new UI (2026-08-27): `docs/ui-dashboard.jpg`,
-  `docs/ui-calibration.jpg`, `docs/bed-view-rectified.jpg` added; the old pre-redesign
-  `demo.gif` / `design-export.png` / `screen-recording.gif` removed. The user has newer
-  screen recordings to add on top - not yet supplied as files.
+- README media refreshed to the new UI (2026-08-27): new `docs/demo.gif` +
+  `docs/live-view.gif` (both cut from the user's Game Bar screen recordings in
+  `~/Videos/Captures/`, Live View piece-placement), plus `docs/ui-calibration.jpg`. The
+  old pre-redesign `demo.gif` / `design-export.png` / `screen-recording.gif` and the
+  weak `ui-dashboard.jpg` / `bed-view-rectified.jpg` were removed. The GIFs show garbage
+  mm labels because calibration is currently stale - swap for fresh clips once the user
+  redoes calibration.
