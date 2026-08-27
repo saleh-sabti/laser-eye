@@ -30,6 +30,9 @@ DEFAULT_SETTINGS = {
     "grbl_baud": 921600,
     "bed_roi_px": None,  # [x0, y0, x1, y1] in camera pixels - the actual bed surface,
                          # excluding the machine frame/cables/belt track. None = whole frame.
+    "flip_y": False,  # SVG export only: mirror Y about the bed height so the file matches
+                      # LightBurn's workspace origin if it disagrees with the machine's.
+                      # Verify once against a real import (see docs/ plan) then leave it.
 }
 
 

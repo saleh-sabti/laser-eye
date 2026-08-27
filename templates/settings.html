@@ -66,6 +66,23 @@
 </div>
 
 <div class="card">
+  <h2>📐 Export coordinates</h2>
+  <p>SVG exports use absolute machine-mm coordinates. If a test import into LightBurn
+  lands <strong>mirrored top-to-bottom</strong> (right piece, wrong Y), LightBurn's
+  workspace origin disagrees with the machine's - turn this on to flip Y about the bed
+  height. Verify once against a real import, then leave it. Doesn't affect photo/PNG
+  exports.</p>
+  <form method="post">
+    <input type="hidden" name="coord_form" value="1">
+    <label style="display:flex; align-items:center; gap:0.5rem;">
+      <input type="checkbox" name="flip_y" style="width:auto; margin:0;" {{ "checked" if settings.flip_y }}>
+      Flip Y axis on SVG export (mirror about bed height)
+    </label>
+    <button type="submit" class="btn primary">💾 Save</button>
+  </form>
+</div>
+
+<div class="card">
   <h2>🔌 GRBL connection</h2>
   <p>Only used for jogging during calibration (see the Calibration page) - actual burn jobs
   still run through LightBurn. Only one program can hold the serial port open at a time, so

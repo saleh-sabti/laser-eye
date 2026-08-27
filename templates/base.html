@@ -323,6 +323,7 @@
       <a href="{{ url_for('settings_page') }}" class="{{ 'active' if request.endpoint == 'settings_page' }}">⚙️ Settings</a>
       <a href="{{ url_for('calibration_page') }}" class="{{ 'active' if request.endpoint == 'calibration_page' }}">🎯 Calibration</a>
       <a href="{{ url_for('live_page') }}" class="{{ 'active' if request.endpoint == 'live_page' }}">📷 Live View</a>
+      <a href="{{ url_for('bed_page') }}" class="{{ 'active' if request.endpoint == 'bed_page' }}">🗺️ Bed View</a>
       <a href="{{ url_for('design_page') }}" class="{{ 'active' if request.endpoint == 'design_page' }}">🎨 Design & Export</a>
       <a href="{{ url_for('training_page') }}" class="{{ 'active' if request.endpoint == 'training_page' }}">🧪 Training Data</a>
     </nav>

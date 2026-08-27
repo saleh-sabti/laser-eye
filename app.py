@@ -12,7 +12,7 @@ from pathlib import Path
 import cv2
 from flask import Flask, Response, render_template, request, redirect, url_for, send_file, flash, jsonify
 
-from laser_align import config, calibration, detection, align, export, photo_align, dataset, rfdetr_detect, grbl, aruco_calibration
+from laser_align import config, calibration, detection, align, export, photo_align, dataset, rfdetr_detect, grbl, aruco_calibration, rectify
 from laser_align.camera import Camera, probe_devices
 from laser_align.calibration import CalibrationPoint, CalibrationError
 from laser_align.detection import NoReferenceFrameError, NoObjectFoundError
@@ -62,6 +62,16 @@ def index():
 @app.route("/settings", methods=["GET", "POST"])
 def settings_page():
     if request.method == "POST":
+        # The "Export coordinates" card is handled on its own and returns -
+        # it carries a checkbox (flip_y), and checkboxes can't use the
+        # .get()-fallback trick the other cards rely on (an absent checkbox
+        # is indistinguishable from an unchecked one), so it must not fall
+        # through into the camera block below.
+        if "coord_form" in request.form:
+            config.save_settings({"flip_y": "flip_y" in request.form})
+            flash("Settings saved.")
+            return redirect(url_for("settings_page"))
+
         # Each card on the page submits its own independent form - .get()
         # with a fallback to the current value means one card's submit
         # can't accidentally wipe fields that belong to another card.
@@ -471,7 +481,10 @@ def design_page():
                 Path(svg_tmp_path).unlink(missing_ok=True)
 
             out_path = str(Path(tempfile.gettempdir()) / "laser_align_export.svg")
-            export.write_svg(out_path, aligned, settings["bed_width_mm"], settings["bed_height_mm"])
+            export.write_svg(
+                out_path, aligned, settings["bed_width_mm"], settings["bed_height_mm"],
+                flip_y=settings["flip_y"],
+            )
             _last_export_path = out_path
             _last_export_kind = "svg"
             _last_placement_info = None
@@ -528,6 +541,68 @@ def design_export():
     if _last_export_kind == "png":
         return send_file(_last_export_path, mimetype="image/png", as_attachment=True, download_name="aligned_design.png")
     return send_file(_last_export_path, mimetype="image/svg+xml", as_attachment=True, download_name="aligned_design.svg")
+
+
+@app.route("/bed")
+def bed_page():
+    settings = config.load_settings()
+    return render_template(
+        "bed.html",
+        settings=settings,
+        has_calibration=calibration.load_homography() is not None,
+        has_reference=detection.has_reference_frame(),
+        px_per_mm=rectify.DEFAULT_PX_PER_MM,
+        grbl_connected=_grbl is not None,
+    )
+
+
+@app.route("/bed/rectified.jpg")
+def bed_rectified():
+    settings = config.load_settings()
+    homography = calibration.load_homography()
+    frame = get_camera().read()
+    if homography is None:
+        # nothing to warp against yet - hand back the raw frame with a note
+        cv2.putText(frame, "Not calibrated - see Calibration page", (12, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
+        return _jpeg_response(frame)
+
+    bed_w, bed_h = settings["bed_width_mm"], settings["bed_height_mm"]
+    ppm = rectify.DEFAULT_PX_PER_MM
+    view = rectify.rectify_frame(frame, homography, bed_w, bed_h, ppm)
+    view = rectify.draw_grid(view, bed_w, bed_h, ppm)
+
+    det, _ = _detect_current(frame)
+    if det is not None:
+        view = rectify.draw_mm_polyline(view, det.contour_mm, bed_h, ppm, color=(0, 220, 0), thickness=2)
+        cx, cy = rectify.mm_to_view_px(det.centroid_mm[0], det.centroid_mm[1], bed_h, ppm)
+        cv2.drawMarker(view, (int(cx), int(cy)), (0, 0, 255), cv2.MARKER_CROSS, 18, 2)
+        label = f"{det.length_mm:.0f} x {det.width_mm:.0f} mm  @ ({det.centroid_mm[0]:.0f}, {det.centroid_mm[1]:.0f})"
+        cv2.putText(view, label, (int(cx) + 10, int(cy) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 3, cv2.LINE_AA)
+        cv2.putText(view, label, (int(cx) + 10, int(cy) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1, cv2.LINE_AA)
+    return _jpeg_response(view)
+
+
+@app.route("/bed/jog_to_point", methods=["POST"])
+def bed_jog_to_point():
+    """Jog the head to a point clicked on the rectified bed view - the
+    honest end-to-end check that a clicked spot maps to the real machine
+    position it claims. Reuses the calibration jog connection; never fires
+    the laser.
+    """
+    try:
+        x_mm = float(request.form["x_mm"])
+        y_mm = float(request.form["y_mm"])
+    except (KeyError, ValueError):
+        return jsonify({"ok": False, "error": "Missing or bad coordinates."})
+    settings = config.load_settings()
+    bed_w, bed_h = settings["bed_width_mm"], settings["bed_height_mm"]
+    if not (0 <= x_mm <= bed_w) or not (0 <= y_mm <= bed_h):
+        return jsonify({"ok": False, "error": f"({x_mm:.0f}, {y_mm:.0f}) mm is outside the bed."})
+    result = _grbl_call(lambda g: g.jog_to(x_mm, y_mm))
+    result["x_mm"] = round(x_mm, 1)
+    result["y_mm"] = round(y_mm, 1)
+    return jsonify(result)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Bed View</h1>
+
+<div class="card">
+  <h2>🗺️ Top-down bed</h2>
+  <p>The camera frame warped straight overhead using your calibration, so screen position
+  maps to real machine mm directly. This is also the quickest way to judge calibration:
+  if the bed looks sheared, bowed, or smeared here, that's the homography — redo
+  <a href="{{ url_for('calibration_page') }}">calibration</a> before trusting anything
+  placed on top of it.</p>
+
+  {% if not has_calibration %}
+  <div class="flash" style="background:var(--danger-bg); color:var(--danger-text);">
+    Not calibrated yet — <a href="{{ url_for('calibration_page') }}">calibrate first</a>.
+    The view below is the raw camera frame until then.
+  </div>
+  {% endif %}
+  {% if not has_reference %}
+  <div class="flash">No empty-bed reference frame — the piece outline won't be detected.
+    Capture one on the <a href="{{ url_for('live_page') }}">Live View</a> page.</div>
+  {% endif %}
+
+  <div class="viewfinder">
+    <img id="bed" class="frame" style="cursor:crosshair;"
+         src="{{ url_for('bed_rectified') }}?t={{ range(0,100000)|random }}">
+    <div id="pin" style="position:absolute; width:14px; height:14px; margin:-7px 0 0 -7px;
+         border:2px solid var(--accent); border-radius:50%; background:rgba(168,86,42,0.25);
+         display:none; pointer-events:none;"></div>
+  </div>
+  <div class="btn-row">
+    <button type="button" class="btn" onclick="refreshBed()">🔄 Refresh</button>
+    <label style="margin:0; display:flex; align-items:center; gap:0.4rem;">
+      <input type="checkbox" id="auto" checked style="width:auto; margin:0;"> Auto-refresh
+    </label>
+  </div>
+  <p class="hint">Grid lines every 50&nbsp;mm. Machine origin (0,&nbsp;0) is the
+  bottom-left corner; Y increases upward.</p>
+</div>
+
+<div class="card">
+  <h2>📍 Click to check placement</h2>
+  <p>Click anywhere on the bed above, then jog the head there. The head physically moves —
+  look at the machine and confirm it lands where the pin is. This is the end-to-end check
+  that the app's mm match the real bed. Never fires the laser.</p>
+
+  <p class="hint">Clicked point:
+    <span id="pt" class="pixel-readout">(click the bed)</span></p>
+
+  <div class="btn-row">
+    {% if grbl_connected %}
+    <form method="post" action="{{ url_for('grbl_disconnect') }}" onsubmit="setTimeout(()=>location.reload(),300)">
+      <button type="submit" class="btn">⏏️ Disconnect machine</button>
+    </form>
+    {% else %}
+    <form method="post" action="{{ url_for('grbl_connect') }}" onsubmit="setTimeout(()=>location.reload(),1500)">
+      <button type="submit" class="btn primary">🔌 Connect machine</button>
+    </form>
+    {% endif %}
+    <button type="button" class="btn primary" id="jogbtn" disabled onclick="jogToPin()">
+      🎯 Jog head to clicked point
+    </button>
+  </div>
+  <p class="hint">Machine position: <span id="pos">not connected</span></p>
+  <div id="alarm" class="flash" style="display:none; background:var(--danger-bg); color:var(--danger-text);">
+    ⚠️ ALARM — clear it with Unlock or Home on the
+    <a href="{{ url_for('calibration_page') }}">Calibration</a> page before jogging again.
+  </div>
+</div>
+
+<script>
+const bed = document.getElementById('bed');
+const pin = document.getElementById('pin');
+const BED_W = {{ settings.bed_width_mm }};
+const BED_H = {{ settings.bed_height_mm }};
+let picked = null;
+
+function refreshBed() {
+  bed.src = '{{ url_for("bed_rectified") }}?t=' + Date.now();
+}
+setInterval(() => { if (document.getElementById('auto').checked) refreshBed(); }, 900);
+
+function placePin() {
+  if (!picked) { pin.style.display = 'none'; return; }
+  const rect = bed.getBoundingClientRect();
+  pin.style.left = (picked.dx / bed.naturalWidth * rect.width) + 'px';
+  pin.style.top = (picked.dy / bed.naturalHeight * rect.height) + 'px';
+  pin.style.display = 'block';
+}
+
+bed.addEventListener('click', (e) => {
+  const rect = bed.getBoundingClientRect();
+  const dx = (e.clientX - rect.left) * (bed.naturalWidth / rect.width);
+  const dy = (e.clientY - rect.top) * (bed.naturalHeight / rect.height);
+  const x_mm = dx / bed.naturalWidth * BED_W;
+  const y_mm = BED_H - dy / bed.naturalHeight * BED_H;
+  picked = { dx, dy, x_mm, y_mm };
+  document.getElementById('pt').textContent = `X ${x_mm.toFixed(1)} mm, Y ${y_mm.toFixed(1)} mm`;
+  document.getElementById('jogbtn').disabled = false;
+  placePin();
+});
+window.addEventListener('resize', placePin);
+
+function jogToPin() {
+  if (!picked) return;
+  const btn = document.getElementById('jogbtn');
+  btn.disabled = true;
+  const body = new URLSearchParams({ x_mm: picked.x_mm, y_mm: picked.y_mm });
+  fetch('{{ url_for("bed_jog_to_point") }}', { method: 'POST', body: body })
+    .then(r => r.json())
+    .then(data => {
+      btn.disabled = false;
+      if (!data.ok) {
+        if (data.alarm) document.getElementById('alarm').style.display = 'block';
+        else alert('Jog failed: ' + data.error);
+      }
+      refreshPos();
+    })
+    .catch(() => { btn.disabled = false; });
+}
+
+function refreshPos() {
+  fetch('{{ url_for("grbl_position") }}').then(r => r.json()).then(data => {
+    const el = document.getElementById('pos');
+    if (!data.connected) { el.textContent = 'not connected'; return; }
+    if (data.error) { el.textContent = 'error: ' + data.error; return; }
+    el.textContent = `X ${data.x} mm, Y ${data.y} mm (${data.state})`;
+    document.getElementById('alarm').style.display = data.state === 'Alarm' ? 'block' : 'none';
+  });
+}
+setInterval(refreshPos, 1500);
+refreshPos();
+</script>
+{% endblock %}
