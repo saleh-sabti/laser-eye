@@ -33,6 +33,12 @@
     </div>
   </div>
 
+  <div id="photo-result" style="display:none; margin-top:1.2rem; border:3px solid #000; padding:0.9rem 1rem; box-shadow:var(--shadow-sm);">
+    <p style="margin:0 0 0.6rem; font-weight:700;">✓ Background removed and aligned</p>
+    <table id="photo-table" style="margin-bottom:0.8rem;"></table>
+    <a class="btn primary" id="photo-dl" href="#">⬇️ Download aligned_design.png</a>
+  </div>
+
   {% if has_placement %}
   <div class="btn-row" style="margin-top:1rem;">
     <a class="btn primary" href="{{ url_for('design_place') }}">🖐️ Back to the placement editor</a>
@@ -96,8 +102,17 @@ function pollPhoto() {
     progFill.style.width = (d.pct || 0) + '%';
     if (d.state === 'done') {
       progFill.style.width = '100%';
-      progLabel.textContent = `Done in ${d.elapsed_s}s — background removed and aligned.`;
-      setTimeout(() => location.reload(), 700);
+      progLabel.textContent = `Done in ${d.elapsed_s}s.`;
+      btn.disabled = false; btn.textContent = '📂 Load another';
+      const p = d.placement || {};
+      document.getElementById('photo-table').innerHTML =
+        `<tr><th>Target centre (mm)</th><td>X ${p.target_x_mm}, Y ${p.target_y_mm}</td></tr>` +
+        `<tr><th>Angle</th><td>${p.angle_deg}° (baked into the image)</td></tr>` +
+        `<tr><th>Image size</th><td>${p.width_mm} × ${p.height_mm} mm</td></tr>`;
+      const dl = document.getElementById('photo-dl');
+      dl.href = (d.download_url || '{{ url_for("design_export") }}') + '?t=' + Date.now();
+      document.getElementById('photo-result').style.display = 'block';
+      document.getElementById('photo-result').scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
     const stage = d.stage ? d.stage[0].toUpperCase() + d.stage.slice(1) : 'Working';

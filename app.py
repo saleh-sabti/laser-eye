@@ -489,8 +489,12 @@ def _photo_job_progress() -> dict:
         return {"state": "idle"}
     if j.get("done"):
         pct = 100 if j.get("state") == "done" else j.get("pct", 0)
-        return {"state": j["state"], "pct": pct, "error": j.get("error"),
-                "stage": j.get("stage", ""), "elapsed_s": round(time.time() - j["t0"], 1)}
+        return {
+            "state": j["state"], "pct": pct, "error": j.get("error"),
+            "stage": j.get("stage", ""), "elapsed_s": round(time.time() - j["t0"], 1),
+            "placement": _last_placement_info if j.get("state") == "done" else None,
+            "download_url": url_for("design_export") if j.get("state") == "done" else None,
+        }
     elapsed = time.time() - j["t0"]
     lo, hi = _PHOTO_STAGES[j.get("stage_i", 0)][1], _PHOTO_STAGES[j.get("stage_i", 0)][2]
     frac = 1.0 - math.exp(-elapsed / max(_photo_avg_s, 1.0))   # eases toward 1, never reaches
