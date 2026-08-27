@@ -506,6 +506,34 @@ def design_export():
     return send_file(_last_export_path, mimetype="image/svg+xml", as_attachment=True, download_name="aligned_design.svg")
 
 
+@app.route("/live/pixel_to_mm", methods=["POST"])
+def live_pixel_to_mm():
+    """Camera pixel -> machine mm, no jogging. Lets the Live View readout
+    show where a click lands in real coordinates the instant you click,
+    which is the quickest read on whether calibration is any good."""
+    homography = calibration.load_homography()
+    if homography is None:
+        return jsonify({"ok": False, "error": "Not calibrated yet."})
+    try:
+        px = float(request.form["px"])
+        py = float(request.form["py"])
+    except (KeyError, ValueError):
+        return jsonify({"ok": False, "error": "Bad pixel coordinates."})
+    x_mm, y_mm = calibration.pixels_to_mm(homography, np.array([[px, py]]))[0]
+    x_mm, y_mm = float(x_mm), float(y_mm)
+    settings = config.load_settings()
+    bed_w, bed_h = settings["bed_width_mm"], settings["bed_height_mm"]
+    # ~10mm grace so a click just off a corner marker doesn't read as an
+    # error; "way_off" (a genuinely broken mapping) is a separate, louder flag.
+    grace = 10.0
+    in_bed = (-grace <= x_mm <= bed_w + grace) and (-grace <= y_mm <= bed_h + grace)
+    way_off = not (-100 <= x_mm <= bed_w + 100) or not (-100 <= y_mm <= bed_h + 100)
+    return jsonify({
+        "ok": True, "x_mm": round(x_mm, 1), "y_mm": round(y_mm, 1),
+        "in_bed": in_bed, "way_off": way_off, "bed_w": bed_w, "bed_h": bed_h,
+    })
+
+
 @app.route("/live/jog_to_point", methods=["POST"])
 def live_jog_to_point():
     """Click a point on the live camera feed -> jog the head there. The

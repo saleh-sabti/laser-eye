@@ -37,6 +37,7 @@
   {% endif %}
 
   <p class="hint">Clicked point: <span id="pt" class="pixel-readout">(click the feed)</span></p>
+  <p class="hint" id="mm-note" style="display:none;"></p>
 
   <div class="btn-row">
     {% if grbl_connected %}
@@ -81,6 +82,20 @@ feed.addEventListener('click', (e) => {
   document.getElementById('pt').textContent = `pixel (${px.toFixed(0)}, ${py.toFixed(0)})`;
   document.getElementById('jogbtn').disabled = false;
   placePin();
+
+  // show where that lands in real machine mm right away
+  const note = document.getElementById('mm-note');
+  fetch('{{ url_for("live_pixel_to_mm") }}', { method: 'POST', body: new URLSearchParams({ px, py }) })
+    .then(r => r.json())
+    .then(d => {
+      note.style.display = 'block';
+      if (!d.ok) { note.textContent = d.error; note.style.color = 'var(--text-muted)'; return; }
+      let tail = '';
+      if (d.way_off) tail = ` &mdash; way off the ${d.bed_w}&times;${d.bed_h} mm bed, calibration is broken`;
+      else if (!d.in_bed) tail = ` &mdash; just past the bed edge`;
+      note.innerHTML = `&rarr; machine <strong>X ${d.x_mm} mm, Y ${d.y_mm} mm</strong>${tail}`;
+      note.style.color = d.way_off ? 'var(--danger-text)' : 'var(--text-muted)';
+    });
 });
 window.addEventListener('resize', placePin);
 
