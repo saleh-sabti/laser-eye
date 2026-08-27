@@ -403,6 +403,23 @@ detected marker corners in the same call. `calibration.py` still defines `Calibr
 / `find_duplicate_conflict` / `MIN_POINTS` - unused by the app now but kept (the
 compute/save/guard code still uses them internally).
 
+**Bowtie calibration: swapped ArUco marker positions (2026-08-27).** The click-to-jog
+check reported bed-centre as ~130,000 mm. Root cause: the four ArUco markers were
+registered in ID order as machine positions (0,0) / (10,370) / (370,370) / (370,0) with
+markers 2 and 3 effectively swapped relative to the corners they physically occupy.
+Walked in the order the markers sit around the frame, those positions trace a
+self-intersecting "bowtie" rather than a rectangle. `cv2.findHomography` still returns a
+matrix for that - it reproduces the 4 points exactly - but its projective denominator
+`w = h20*x + h21*y + h22` passes through zero *inside* the frame, so every interior point
+maps to six-figure garbage while the diagnostic (the 4 corners) looks fine. This is a
+distinct failure from the earlier duplicate-point and clustered-point cases. Guarded in
+`compute_homography()`: for a 4-point calibration, sort both quads into the pixel points'
+hull order and reject if the mm quad is then self-intersecting; and after fitting, reject
+if `w` changes sign (or gets near zero) across the frame corners + centre. Both verified
+against the real bad calibration and against valid quads given in scrambled point order.
+The fix on the user's side is to re-register each marker by jogging the laser to its
+bracketed corner and reading the real X/Y, not typing nominal grid values.
+
 **Click-to-jog placement check (Live View).** Briefly built as a separate "Bed View"
 page with a rectified (`cv2.warpPerspective`) top-down render, then removed the same day
 on user feedback: with the current bad calibration the warped bed looked visibly crooked

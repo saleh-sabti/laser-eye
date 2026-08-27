@@ -117,13 +117,82 @@ def compute_homography(
 
     pixel_pts = np.array([[p.pixel_x, p.pixel_y] for p in points], dtype=np.float32)
     mm_pts = np.array([[p.machine_x_mm, p.machine_y_mm] for p in points], dtype=np.float32)
+
+    # With exactly 4 points (the ArUco path always gives 4, one per corner
+    # marker), the pixel quad and the mm quad - walked in the *same* point
+    # order - must both be simple convex quadrilaterals wound the same way.
+    # If a marker's registered machine position doesn't match the corner it
+    # physically sits at (e.g. two markers' positions swapped), the mm quad
+    # comes out self-intersecting (a "bowtie") while the pixel quad is fine.
+    # findHomography still returns a matrix for that - it reproduces the 4
+    # points but its projective denominator passes through zero inside the
+    # frame, so interior points map to garbage (six-figure mm). Hit for
+    # real: markers registered as (0,0)/(10,370)/(370,370)/(370,0) in ID
+    # order, with 2 and 3 effectively swapped - bed centre mapped to
+    # ~130,000 mm. Caught here so it can't be saved.
+    if len(points) == 4:
+        _check_quads_consistent(pixel_pts, mm_pts)
+
     homography, _ = cv2.findHomography(pixel_pts, mm_pts, method=0)
     if homography is None:
         raise CalibrationError(
             "Could not fit a homography from these points - check they "
             "aren't collinear or duplicated."
         )
+
+    # Final guard: the fitted homography must stay finite across the whole
+    # frame. Its denominator w = h20*x + h21*y + h22 blowing through zero
+    # inside the frame (the failure mode above, and anything else that makes
+    # the fit near-degenerate) sends points near that line to infinity.
+    h = homography
+    corners = [(0, 0), (frame_width, 0), (0, frame_height), (frame_width, frame_height),
+               (frame_width / 2, frame_height / 2)]
+    ws = [h[2, 0] * x + h[2, 1] * y + h[2, 2] for x, y in corners]
+    if min(ws) <= 0 < max(ws) or min(abs(w) for w in ws) < 1e-6:
+        raise CalibrationError(
+            "This calibration diverges inside the camera frame - the mapping "
+            "would send parts of the bed to impossible coordinates. Almost "
+            "always a marker's registered machine position doesn't match the "
+            "corner it's physically at. Re-register by jogging the laser to "
+            "each marker's bracketed corner and reading the real X/Y."
+        )
     return homography
+
+
+def _hull_order(quad: np.ndarray) -> np.ndarray:
+    """Indices that put the 4 points in convex-polygon order (CCW by angle
+    around their centroid). Point order in a calibration isn't guaranteed
+    (ArUco returns marker-ID order), so both quads get sorted the same way
+    before they're compared."""
+    c = quad.mean(axis=0)
+    return np.argsort(np.arctan2(quad[:, 1] - c[1], quad[:, 0] - c[0]))
+
+
+def _is_simple_quad(quad: np.ndarray) -> bool:
+    """True if the 4 vertices, in the given order, form a non-self-intersecting
+    (simple) quadrilateral - every consecutive turn goes the same way."""
+    signs = []
+    for i in range(4):
+        a, b, cc = quad[i], quad[(i + 1) % 4], quad[(i + 2) % 4]
+        cross = (b[0] - a[0]) * (cc[1] - b[1]) - (b[1] - a[1]) * (cc[0] - b[0])
+        signs.append(cross > 0)
+    return all(signs) or not any(signs)
+
+
+def _check_quads_consistent(pixel_pts: np.ndarray, mm_pts: np.ndarray) -> None:
+    order = _hull_order(pixel_pts)
+    # Walk the mm points in the order the pixel points sit around the frame.
+    # If they were each registered to the corner they actually occupy, this
+    # traces a simple quadrilateral. If two markers' positions are swapped,
+    # it traces a bowtie.
+    if not _is_simple_quad(mm_pts[order]):
+        raise CalibrationError(
+            "Taken in the order the markers sit around the frame, the four "
+            "registered machine positions trace a twisted (self-crossing) shape "
+            "rather than a rectangle - two markers' positions are almost "
+            "certainly mixed up. Re-register by jogging the laser to each "
+            "marker's bracketed corner and entering the real X/Y it reads."
+        )
 
 
 def save_calibration(
