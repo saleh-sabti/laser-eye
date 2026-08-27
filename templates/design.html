@@ -20,10 +20,18 @@
       photos is coming next.)</li>
   </ul>
 
-  <form method="post" enctype="multipart/form-data">
-    <label>Design file <input type="file" name="design_file" accept=".svg,.png,.jpg,.jpeg" required></label>
-    <button type="submit" class="btn primary">📂 Load design</button>
+  <form id="up-form" enctype="multipart/form-data">
+    <label>Design file <input type="file" name="design_file" id="design_file" accept=".svg,.png,.jpg,.jpeg" required></label>
+    <button type="submit" class="btn primary" id="up-btn">📂 Load design</button>
   </form>
+  <p class="hint" id="up-err" style="color:var(--danger-text);"></p>
+
+  <div id="prog-wrap" style="display:none; margin-top:1rem;">
+    <p class="hint" id="prog-label" style="margin-bottom:0.4rem;">Working…</p>
+    <div style="border:3px solid #000; height:22px; background:var(--surface-2);">
+      <div id="prog-fill" style="height:100%; width:0%; background:var(--accent); transition:width 0.3s ease;"></div>
+    </div>
+  </div>
 
   {% if has_placement %}
   <div class="btn-row" style="margin-top:1rem;">
@@ -50,4 +58,53 @@
   <a class="btn primary" href="{{ url_for('design_export') }}">⬇️ Download aligned_design.png</a>
 </div>
 {% endif %}
+
+<script>
+const form = document.getElementById('up-form');
+const btn = document.getElementById('up-btn');
+const err = document.getElementById('up-err');
+const progWrap = document.getElementById('prog-wrap');
+const progFill = document.getElementById('prog-fill');
+const progLabel = document.getElementById('prog-label');
+
+form.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const f = document.getElementById('design_file').files[0];
+  if (!f) return;
+  err.textContent = '';
+  btn.disabled = true; btn.textContent = 'Loading…';
+  fetch('{{ url_for("design_page") }}', { method: 'POST', body: new FormData(form) })
+    .then(r => r.json())
+    .then(d => {
+      if (!d.ok) { err.textContent = d.error; btn.disabled = false; btn.textContent = '📂 Load design'; return; }
+      if (d.redirect) { location.href = d.redirect; return; }
+      if (d.photo_job) { btn.textContent = 'Processing photo…'; progWrap.style.display = 'block'; pollPhoto(); }
+    })
+    .catch(() => { err.textContent = 'Upload failed.'; btn.disabled = false; btn.textContent = '📂 Load design'; });
+});
+
+function pollPhoto() {
+  fetch('{{ url_for("design_photo_status") }}').then(r => r.json()).then(d => {
+    if (d.state === 'idle') { setTimeout(pollPhoto, 400); return; }
+    if (d.state === 'error') {
+      progLabel.textContent = 'Failed: ' + (d.error || 'unknown error');
+      progLabel.style.color = 'var(--danger-text)';
+      progFill.style.background = 'var(--danger-text)';
+      btn.disabled = false; btn.textContent = '📂 Load design';
+      return;
+    }
+    progFill.style.width = (d.pct || 0) + '%';
+    if (d.state === 'done') {
+      progFill.style.width = '100%';
+      progLabel.textContent = `Done in ${d.elapsed_s}s — background removed and aligned.`;
+      setTimeout(() => location.reload(), 700);
+      return;
+    }
+    const stage = d.stage ? d.stage[0].toUpperCase() + d.stage.slice(1) : 'Working';
+    progLabel.textContent = `${stage}… ${d.pct}%  ·  ${d.elapsed_s}s`
+      + (d.est_s ? ` (usually ~${d.est_s}s)` : '');
+    setTimeout(pollPhoto, 400);
+  }).catch(() => setTimeout(pollPhoto, 800));
+}
+</script>
 {% endblock %}

@@ -5,7 +5,9 @@ live detection view, and design upload/placement/export. Runs locally;
 open it from a phone/tablet on the same network via http://<host-ip>:5000.
 """
 import io
+import math
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -22,8 +24,6 @@ from laser_align.aruco_calibration import NoMarkersConfiguredError, NotEnoughMar
 
 app = Flask(__name__)
 app.secret_key = "laser-auto-align-local"  # local-only tool, no real auth surface
-
-import threading
 
 _camera: Camera | None = None
 _camera_lock = threading.Lock()
@@ -432,27 +432,92 @@ _place_size_mm: tuple[float, float] | None = None
 _place_bed_jpg: bytes | None = None           # frozen bed photo the editor draws on
 _place_detection: detection.Detection | None = None
 
+# Photo processing runs on a background thread so the page can show a
+# progress bar - rembg's background removal is one blocking call of a few
+# to tens of seconds with no progress of its own, so the "percent" is a
+# time estimate that eases toward (never past) 95% until it actually
+# finishes, plus a rolling average of how long recent runs took.
+_photo_job: dict | None = None
+_photo_job_lock = threading.Lock()
+_photo_avg_s = 8.0
+
+_PHOTO_STAGES = [
+    ("removing background", 0.05, 0.80),   # (label, pct_start, pct_end)
+    ("aligning to the piece", 0.80, 0.95),
+]
+
+
+def _run_photo_job(photo_bytes: bytes, det: "detection.Detection") -> None:
+    global _photo_job, _photo_avg_s
+    t0 = time.time()
+    try:
+        with _photo_job_lock:
+            _photo_job.update(stage="removing background", stage_i=0, t0=t0)
+        aligned_photo = photo_align.align_photo(photo_bytes, det)
+        with _photo_job_lock:
+            _photo_job.update(stage="aligning to the piece", stage_i=1)
+        out_path = str(Path(tempfile.gettempdir()) / "laser_align_export.png")
+        photo_align.save_png(aligned_photo, out_path)
+    except Exception as e:  # ValueError from align, or anything rembg throws
+        with _photo_job_lock:
+            _photo_job.update(state="error", error=str(e), done=True)
+        return
+
+    took = time.time() - t0
+    _photo_avg_s = 0.7 * _photo_avg_s + 0.3 * max(took, 1.0)
+
+    global _last_export_path, _last_export_kind, _last_placement_info
+    _last_export_path = out_path
+    _last_export_kind = "png"
+    _last_placement_info = {
+        "target_x_mm": round(aligned_photo.target_x_mm, 1),
+        "target_y_mm": round(aligned_photo.target_y_mm, 1),
+        "angle_deg": round(aligned_photo.angle_deg, 1),
+        "width_mm": round(aligned_photo.width_mm, 1),
+        "height_mm": round(aligned_photo.height_mm, 1),
+    }
+    with _photo_job_lock:
+        _photo_job.update(state="done", done=True, took_s=round(took, 1))
+
+
+def _photo_job_progress() -> dict:
+    """Current job status with an eased percentage derived from elapsed time
+    vs the rolling average."""
+    with _photo_job_lock:
+        j = dict(_photo_job) if _photo_job else None
+    if j is None:
+        return {"state": "idle"}
+    if j.get("done"):
+        pct = 100 if j.get("state") == "done" else j.get("pct", 0)
+        return {"state": j["state"], "pct": pct, "error": j.get("error"),
+                "stage": j.get("stage", ""), "elapsed_s": round(time.time() - j["t0"], 1)}
+    elapsed = time.time() - j["t0"]
+    lo, hi = _PHOTO_STAGES[j.get("stage_i", 0)][1], _PHOTO_STAGES[j.get("stage_i", 0)][2]
+    frac = 1.0 - math.exp(-elapsed / max(_photo_avg_s, 1.0))   # eases toward 1, never reaches
+    pct = round(100 * (lo + (hi - lo) * frac))
+    return {"state": "working", "pct": pct, "stage": j.get("stage", ""),
+            "elapsed_s": round(elapsed, 1), "est_s": round(_photo_avg_s, 1)}
+
 
 @app.route("/design", methods=["GET", "POST"])
 def design_page():
     global _last_export_path, _last_export_kind, _last_placement_info
-    global _place_polylines, _place_size_mm, _place_bed_jpg, _place_detection
-    settings = config.load_settings()
+    global _place_polylines, _place_size_mm, _place_bed_jpg, _place_detection, _photo_job
 
     if request.method == "POST":
+        # The upload form submits via fetch, so answers are always JSON:
+        # {redirect: ...} for an SVG (straight to the editor), or
+        # {photo_job: true} for a photo (frontend then polls the progress).
         design_file = request.files.get("design_file")
         if not design_file or design_file.filename == "":
-            flash("Choose a design file first (SVG, PNG, or JPEG).")
-            return redirect(url_for("design_page"))
+            return jsonify({"ok": False, "error": "Choose a design file first (SVG, PNG, or JPEG)."})
 
         ext = Path(design_file.filename).suffix.lower()
-
         if calibration.load_homography() is None:
-            flash("Calibrate first - the editor places designs in real machine mm.")
-            return redirect(url_for("design_page"))
+            return jsonify({"ok": False, "error": "Calibrate first - designs are placed in real machine mm."})
 
         frame = get_camera().read()
-        det, _ = _detect_current(frame)   # optional - editor works without a detection
+        det, _ = _detect_current(frame)   # optional for SVG, required for photo
 
         if ext == ".svg":
             with tempfile.NamedTemporaryFile(suffix=".svg", delete=False) as tmp_in:
@@ -461,8 +526,7 @@ def design_page():
             try:
                 polylines, w_mm, h_mm = placement.load_svg_mm(svg_tmp_path)
             except ValueError as e:
-                flash(f"Couldn't read that SVG: {e}")
-                return redirect(url_for("design_page"))
+                return jsonify({"ok": False, "error": f"Couldn't read that SVG: {e}"})
             finally:
                 Path(svg_tmp_path).unlink(missing_ok=True)
 
@@ -472,36 +536,19 @@ def design_page():
             ok, buf = cv2.imencode(".jpg", frame)
             _place_bed_jpg = buf.tobytes()
             _last_export_path = None
-            return redirect(url_for("design_place"))
+            return jsonify({"ok": True, "redirect": url_for("design_place")})
 
         elif ext in PHOTO_EXTENSIONS:
             if det is None:
-                flash("Photo alignment needs the workpiece detected - check the reference frame and bed.")
-                return redirect(url_for("design_page"))
-            try:
-                aligned_photo = photo_align.align_photo(design_file.read(), det)
-            except ValueError as e:
-                flash(f"Photo alignment failed: {e}")
-                return redirect(url_for("design_page"))
-            out_path = str(Path(tempfile.gettempdir()) / "laser_align_export.png")
-            photo_align.save_png(aligned_photo, out_path)
-            _last_export_path = out_path
-            _last_export_kind = "png"
-            _last_placement_info = {
-                "target_x_mm": round(aligned_photo.target_x_mm, 1),
-                "target_y_mm": round(aligned_photo.target_y_mm, 1),
-                "angle_deg": round(aligned_photo.angle_deg, 1),
-                "width_mm": round(aligned_photo.width_mm, 1),
-                "height_mm": round(aligned_photo.height_mm, 1),
-            }
-            flash(
-                "Photo background removed and aligned. Rotation is baked into the image - "
-                "set your machine's job origin to the target position shown below. "
-                "(Hand-placement for photos is coming next; SVG designs get the editor now.)"
-            )
-        else:
-            flash(f"Unsupported file type '{ext}' - use .svg, .png, or .jpg.")
-            return redirect(url_for("design_page"))
+                return jsonify({"ok": False, "error":
+                    "Photo alignment needs the workpiece detected - check the reference frame and bed."})
+            photo_bytes = design_file.read()
+            with _photo_job_lock:
+                _photo_job = {"state": "queued", "t0": time.time(), "stage": "starting", "stage_i": 0}
+            threading.Thread(target=_run_photo_job, args=(photo_bytes, det), daemon=True).start()
+            return jsonify({"ok": True, "photo_job": True})
+
+        return jsonify({"ok": False, "error": f"Unsupported file type '{ext}' - use .svg, .png, or .jpg."})
 
     return render_template(
         "design.html",
@@ -511,6 +558,11 @@ def design_page():
         export_kind=_last_export_kind,
         placement=_last_placement_info,
     )
+
+
+@app.route("/design/photo_status")
+def design_photo_status():
+    return jsonify(_photo_job_progress())
 
 
 @app.route("/design/place")
