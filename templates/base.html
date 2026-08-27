@@ -6,101 +6,99 @@
 <title>Laser Auto-Align{% block title %}{% endblock %}</title>
 <style>
   @font-face {
-    font-family: "Fraunces";
+    font-family: "Space Grotesk";
     font-style: normal;
-    font-weight: 500 800;
+    font-weight: 300 700;
     font-display: swap;
-    src: url("{{ url_for('static', filename='fonts/fraunces-normal.woff2') }}") format("woff2");
+    src: url("{{ url_for('static', filename='fonts/spacegrotesk-latin.woff2') }}") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
   }
   @font-face {
-    font-family: "Fraunces";
-    font-style: italic;
-    font-weight: 500 800;
-    font-display: swap;
-    src: url("{{ url_for('static', filename='fonts/fraunces-italic.woff2') }}") format("woff2");
-  }
-  @font-face {
-    font-family: "Work Sans";
+    font-family: "Space Grotesk";
     font-style: normal;
-    font-weight: 400 700;
+    font-weight: 300 700;
     font-display: swap;
-    src: url("{{ url_for('static', filename='fonts/worksans-normal.woff2') }}") format("woff2");
-  }
-  @font-face {
-    font-family: "Work Sans";
-    font-style: italic;
-    font-weight: 500;
-    font-display: swap;
-    src: url("{{ url_for('static', filename='fonts/worksans-italic.woff2') }}") format("woff2");
+    src: url("{{ url_for('static', filename='fonts/spacegrotesk-latin-ext.woff2') }}") format("woff2");
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
   }
   :root {
-    --bg: #e8e1d0;
-    --surface: #f6f1e4;
-    --surface-2: #eee6d3;
-    --border: #d3c6a8;
-    --text: #2b2620;
-    --text-muted: #756b58;
-    --accent: #a8562a;
-    --accent-hover: #8a4520;
-    --accent-soft: #f0ddc7;
-    --accent-2: #4c7a6e;
-    --target: #3d7a52;
-    --target-soft: #dcecdf;
-    --success-bg: #dcecdf;
-    --success-text: #2f6b45;
-    --danger-bg: #f6ddd6;
-    --danger-text: #a3401e;
-    --warn-bg: #f3e3bd;
-    --warn-text: #7a5309;
-    --radius: 5px;
-    --radius-sm: 3px;
-    --shadow: 0 1px 0 rgba(30,24,14,0.05), inset 0 0 0 1px rgba(30,24,14,0.025);
-    --font-display: "Fraunces", Georgia, "Iowan Old Style", serif;
-    --font-body: "Work Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --bg: #FFFDF5;
+    --surface: #FFFFFF;
+    --surface-2: #FFFFFF;
+    --border: #000000;
+    --text: #000000;
+    --text-muted: rgba(0,0,0,0.58);
+    --accent: #FF6B6B;
+    --accent-hover: #E8503D;
+    --accent-soft: rgba(255,107,107,0.16);
+    --accent-2: #FFD93D;
+    --secondary: #FFD93D;
+    --muted: #C4B5FD;
+    --white: #FFFFFF;
+    --target: #00C853;
+    --target-soft: rgba(0,200,83,0.18);
+    --success-bg: #00C853;
+    --success-text: #000000;
+    --danger-bg: #FF6B6B;
+    --danger-text: #000000;
+    --warn-bg: #FFD93D;
+    --warn-text: #000000;
+    --radius: 0;
+    --radius-sm: 0;
+    --shadow-sm: 4px 4px 0 0 #000;
+    --shadow: 8px 8px 0 0 #000;
+    --shadow-lg: 12px 12px 0 0 #000;
+    --shadow-xl: 16px 16px 0 0 #000;
+    --font-display: "Space Grotesk", -apple-system, "Segoe UI", sans-serif;
+    --font-body: "Space Grotesk", -apple-system, "Segoe UI", sans-serif;
     --font-mono: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #1b1d1c;
-      --surface: #232624;
-      --surface-2: #2b2e2b;
-      --border: #3c3f3b;
-      --text: #ece5d3;
-      --text-muted: #9b9686;
-      --accent: #d97b3f;
-      --accent-hover: #ef9256;
-      --accent-soft: #3a2415;
-      --accent-2: #6fae9c;
-      --target: #5fbf82;
-      --target-soft: #16302a;
-      --success-bg: #16302a;
-      --success-text: #5fbf82;
-      --danger-bg: #3a1c14;
-      --danger-text: #f2896a;
-      --warn-bg: #362a10;
-      --warn-text: #e0b34f;
-      --shadow: 0 1px 0 rgba(0,0,0,0.4), inset 0 0 0 1px rgba(255,255,255,0.035);
-    }
   }
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    background-color: var(--bg);
-    background-image: repeating-linear-gradient(
-      45deg,
-      color-mix(in srgb, var(--text) 5%, transparent) 0px,
-      color-mix(in srgb, var(--text) 5%, transparent) 1px,
-      transparent 1px,
-      transparent 9px
-    );
+    min-height: 100vh;
+    background: var(--bg);
     color: var(--text);
     font-family: var(--font-body);
+    font-weight: 500;
     line-height: 1.5;
   }
-  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  a { color: var(--accent); }
-  a:hover { color: var(--accent-hover); }
-  .shell { max-width: 900px; margin: 0 auto; padding: 1.25rem 1.25rem 3rem; }
+  :focus-visible { outline: 3px solid #000; outline-offset: 2px; }
+  a { color: var(--accent-hover); }
+  a:hover { color: #000; }
+
+  /* ---------- background: graph paper, not a mood-light ---------- */
+  .bg-mesh {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-color: var(--bg);
+    background-image:
+      linear-gradient(to right, rgba(0,0,0,0.07) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(0,0,0,0.07) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
+  .shell { max-width: 900px; margin: 0 auto; padding: 1.25rem 1.25rem 4rem; position: relative; }
+
+  /* ---------- topbar (sticky, snaps a hard edge on scroll) ---------- */
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    padding-top: 0.9rem;
+    margin: 0 -1.25rem;
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
+    background: var(--bg);
+    transition: padding 0.15s ease-out;
+  }
+  .topbar.is-scrolled {
+    padding-top: 0.55rem;
+    border-bottom: 4px solid #000;
+    box-shadow: var(--shadow-sm);
+  }
 
   header.app-header {
     display: flex;
@@ -108,7 +106,7 @@
     justify-content: space-between;
     flex-wrap: wrap;
     gap: 0.75rem;
-    padding: 1rem 0 0.5rem;
+    padding: 0.35rem 0 0.9rem;
   }
   .brand {
     display: flex;
@@ -117,74 +115,126 @@
     font-family: var(--font-display);
     font-weight: 700;
     font-size: 1.35rem;
+    text-transform: uppercase;
+    letter-spacing: -0.01em;
+    text-shadow: 3px 3px 0 var(--secondary);
+    transition: font-size 0.15s ease-out;
   }
-  .brand .dot { font-size: 1.2rem; }
+  .topbar.is-scrolled .brand { font-size: 1.1rem; }
+  .brand .dot { font-size: 1.2rem; text-shadow: none; }
   .brand-sub {
-    font-family: var(--font-display);
-    font-style: italic;
-    font-size: 0.85rem;
-    color: var(--text-muted);
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #000;
+    background: var(--white);
+    border: 2px solid #000;
+    padding: 0.25rem 0.55rem;
+    transform: rotate(-1.5deg);
+    transition: opacity 0.15s ease-out;
   }
+  .topbar.is-scrolled .brand-sub { opacity: 0; }
 
   nav.tabs {
     display: flex;
-    gap: 0;
+    gap: 0.5rem;
     flex-wrap: wrap;
-    border-bottom: 1px solid var(--border);
-    margin: 0.5rem 0 1.75rem;
+    margin: 0.35rem 0 1.75rem;
   }
   nav.tabs a {
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
     text-decoration: none;
-    color: var(--text-muted);
-    background: none;
-    border: none;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -1px;
-    padding: 0.6rem 0.85rem;
+    color: #000;
+    background: var(--surface);
+    border: 3px solid transparent;
+    padding: 0.5rem 0.85rem;
     font-family: var(--font-body);
-    font-size: 0.85rem;
-    font-weight: 500;
-    transition: color 0.15s ease, border-color 0.15s ease;
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    transition: border-color 0.1s ease-out, background 0.1s ease-out, box-shadow 0.1s ease-out, transform 0.1s ease-out;
   }
-  nav.tabs a:hover { color: var(--text); }
+  nav.tabs a:hover {
+    border-color: #000;
+    background: var(--secondary);
+    box-shadow: var(--shadow-sm);
+    transform: translate(-2px, -2px);
+  }
   nav.tabs a.active {
-    font-family: var(--font-display);
-    font-style: italic;
-    font-weight: 600;
-    font-size: 0.92rem;
-    color: var(--accent);
-    border-bottom-color: var(--accent);
+    border-color: #000;
+    background: var(--accent);
+    box-shadow: var(--shadow-sm);
+  }
+  .nav-icon {
+    width: 16px;
+    height: 16px;
+    flex: none;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 2.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    nav.tabs a { transition: none; }
+    nav.tabs a:hover { transform: none; }
   }
 
   .flash {
     background: var(--warn-bg);
     color: var(--warn-text);
-    border: 1px solid color-mix(in srgb, var(--warn-text) 25%, transparent);
-    padding: 0.65rem 1rem;
-    border-radius: var(--radius-sm);
+    border: 4px solid #000;
+    padding: 0.7rem 1.05rem;
     margin-bottom: 1rem;
+    font-weight: 700;
     font-size: 0.92rem;
+    box-shadow: var(--shadow-sm);
   }
 
+  /* ---------- cards: bordered, hard-shadowed, physically stacked ---------- */
   .card {
+    position: relative;
     background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border: 4px solid #000;
     box-shadow: var(--shadow);
-    padding: 1.3rem 1.4rem;
-    margin-bottom: 1.25rem;
+    padding: 1.4rem 1.5rem;
+    margin-bottom: 1.5rem;
+    transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
+  }
+  .card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg);
+  }
+  .card.reveal-init {
+    opacity: 0;
+    transform: translateY(28px) rotate(-1deg);
+    transition: opacity 0.3s ease-out, transform 0.3s ease-out;
+  }
+  .card.reveal-init.reveal-visible {
+    opacity: 1;
+    transform: translateY(0) rotate(0);
+  }
+  .card.reveal-init:hover { transform: translateY(-4px); }
+  @media (prefers-reduced-motion: reduce) {
+    .card, .card.reveal-init {
+      opacity: 1; transform: none; transition: none;
+    }
+    .card:hover { transform: none; box-shadow: var(--shadow); }
   }
   .card h2 {
     margin: 0 0 0.9rem;
     padding-bottom: 0.6rem;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 3px solid #000;
     font-family: var(--font-display);
-    font-style: italic;
-    font-weight: 600;
-    font-size: 1.15rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: -0.01em;
+    font-size: 1.1rem;
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -193,55 +243,67 @@
   h1 {
     font-family: var(--font-display);
     font-weight: 700;
-    font-size: 1.9rem;
-    margin: 0.3rem 0 1.1rem;
+    text-transform: uppercase;
+    font-size: 2.1rem;
+    letter-spacing: -0.02em;
+    text-shadow: 4px 4px 0 var(--accent);
+    margin: 0.3rem 0 1.4rem;
   }
 
   table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
-  th, td { text-align: left; padding: 0.55rem 0.6rem; border-bottom: 1px solid var(--border); }
+  th, td { text-align: left; padding: 0.65rem 0.65rem; border-bottom: 2px solid #000; }
   th {
     color: var(--text-muted);
-    font-weight: 600;
+    font-weight: 700;
     width: 40%;
     text-transform: uppercase;
     font-size: 0.7rem;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.06em;
   }
-  td { font-variant-numeric: tabular-nums; }
+  td { font-variant-numeric: tabular-nums; font-weight: 500; }
   tr:last-child td, tr:last-child th { border-bottom: none; }
 
   .badge {
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
-    padding: 0.2rem 0.6rem;
-    border-radius: 999px;
-    font-family: var(--font-mono);
-    font-size: 0.72rem;
+    padding: 0.22rem 0.6rem;
+    border: 2px solid #000;
+    box-shadow: var(--shadow-sm);
+    font-family: var(--font-body);
+    font-size: 0.7rem;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.04em;
+    color: #000;
+    transform: rotate(-1.5deg);
   }
-  .badge.ok { background: var(--success-bg); color: var(--success-text); }
-  .badge.bad { background: var(--danger-bg); color: var(--danger-text); }
-  .badge::before { content: "\25CF"; font-size: 0.55rem; }
+  .badge.ok { background: var(--success-bg); }
+  .badge.bad { background: var(--danger-bg); }
+  .badge::before { content: "\25CF"; font-size: 0.6rem; }
 
-  label { display: block; margin-top: 0.9rem; font-weight: 600; font-size: 0.85rem; }
+  label { display: block; margin-top: 0.9rem; font-weight: 700; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.02em; }
   input[type=number], input[type=text], input[type=file], select {
     display: block;
     width: 100%;
     max-width: 320px;
     margin-top: 0.35rem;
-    padding: 0.5rem 0.65rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    padding: 0.55rem 0.7rem;
+    border: 3px solid #000;
     background: var(--surface-2);
     color: var(--text);
     font-family: var(--font-body);
+    font-weight: 700;
     font-size: 0.92rem;
+    transition: background 0.1s ease-out, box-shadow 0.1s ease-out;
   }
   input[type=number] { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-  input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  input:focus-visible, select:focus-visible {
+    background: var(--secondary);
+    box-shadow: var(--shadow-sm);
+    outline: 3px solid #000;
+    outline-offset: 2px;
+  }
   input[type=file] { max-width: 100%; }
 
   .btn {
@@ -249,84 +311,139 @@
     align-items: center;
     gap: 0.4rem;
     margin-top: 1rem;
-    padding: 0.55rem 1.1rem;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border);
-    background: var(--surface-2);
-    color: var(--text);
+    padding: 0.6rem 1.15rem;
+    border: 3px solid #000;
+    background: var(--surface);
+    color: #000;
     font-family: var(--font-body);
-    font-size: 0.88rem;
-    font-weight: 600;
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
     cursor: pointer;
     text-decoration: none;
+    box-shadow: var(--shadow-sm);
+    transition: transform 0.1s ease-out, box-shadow 0.1s ease-out, background 0.1s ease-out;
   }
-  .btn:hover { border-color: var(--accent); color: var(--accent); }
-  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fdf8f0; }
-  .btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: #fdf8f0; }
-  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn:hover { background: var(--muted); }
+  .btn:active {
+    transform: translate(4px, 4px);
+    box-shadow: none;
+  }
+  .btn.primary { background: var(--accent); }
+  .btn.primary:hover { background: #FF8A8A; }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .btn:disabled:active { transform: none; box-shadow: var(--shadow-sm); }
   .btn-row { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+  @media (prefers-reduced-motion: reduce) {
+    .btn { transition: none; }
+  }
 
   img.frame {
     max-width: 100%;
     display: block;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border: 4px solid #000;
     background: var(--surface-2);
   }
   .viewfinder {
     position: relative;
     display: inline-block;
     max-width: 100%;
+    box-shadow: var(--shadow);
   }
-  .viewfinder::before {
-    content: "";
+  .viewfinder::after {
+    content: "\25C9 FEED";
     position: absolute;
-    inset: -10px;
+    top: -14px;
+    right: -8px;
+    background: var(--secondary);
+    color: #000;
+    border: 2px solid #000;
+    padding: 2px 8px;
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    transform: rotate(4deg);
+    box-shadow: var(--shadow-sm);
     pointer-events: none;
-    background:
-      linear-gradient(var(--accent), var(--accent)) top    left  / 18px 2px no-repeat,
-      linear-gradient(var(--accent), var(--accent)) top    left  / 2px 18px no-repeat,
-      linear-gradient(var(--accent), var(--accent)) top    right / 18px 2px no-repeat,
-      linear-gradient(var(--accent), var(--accent)) top    right / 2px 18px no-repeat,
-      linear-gradient(var(--accent), var(--accent)) bottom left  / 18px 2px no-repeat,
-      linear-gradient(var(--accent), var(--accent)) bottom left  / 2px 18px no-repeat,
-      linear-gradient(var(--accent), var(--accent)) bottom right / 18px 2px no-repeat,
-      linear-gradient(var(--accent), var(--accent)) bottom right / 2px 18px no-repeat;
   }
   .viewfinder img.frame { max-width: 100%; }
 
   .live-dot {
     display: inline-block;
-    width: 8px;
-    height: 8px;
+    width: 9px;
+    height: 9px;
     border-radius: 50%;
     background: var(--target);
-    box-shadow: 0 0 0 3px var(--target-soft);
+    box-shadow: 0 0 0 2px #000;
     animation: live-pulse 1.6s ease-in-out infinite;
   }
   @keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
   @media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
 
-  .hint { color: var(--text-muted); font-size: 0.85rem; margin-top: 0.35rem; }
-  .pixel-readout { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600; }
+  .hint { color: var(--text-muted); font-size: 0.85rem; margin-top: 0.35rem; font-weight: 500; }
+  .pixel-readout { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 700; }
   code, .mono { font-family: var(--font-mono); }
 </style>
 </head>
 <body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="icon-home" viewBox="0 0 20 20">
+        <path d="M3 10.5 10 4l7 6.5"/>
+        <path d="M5 9v7a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V9"/>
+        <path d="M8 17v-5h4v5"/>
+      </symbol>
+      <symbol id="icon-settings" viewBox="0 0 20 20">
+        <line x1="4" y1="6" x2="16" y2="6"/><circle cx="12" cy="6" r="1.7"/>
+        <line x1="4" y1="10" x2="16" y2="10"/><circle cx="8" cy="10" r="1.7"/>
+        <line x1="4" y1="14" x2="16" y2="14"/><circle cx="13" cy="14" r="1.7"/>
+      </symbol>
+      <symbol id="icon-target" viewBox="0 0 20 20">
+        <circle cx="10" cy="10" r="6.2"/>
+        <circle cx="10" cy="10" r="2.8"/>
+        <circle cx="10" cy="10" r="0.6" fill="currentColor" stroke="none"/>
+      </symbol>
+      <symbol id="icon-camera" viewBox="0 0 20 20">
+        <rect x="3" y="6.5" width="14" height="9.5" rx="0"/>
+        <path d="M7.2 6.5 8.4 4.3h3.2l1.2 2.2"/>
+        <circle cx="10" cy="11.2" r="2.8"/>
+      </symbol>
+      <symbol id="icon-design" viewBox="0 0 20 20">
+        <rect x="3.2" y="3.2" width="8" height="8" rx="0"/>
+        <circle cx="13.8" cy="13.8" r="3.8"/>
+      </symbol>
+      <symbol id="icon-flask" viewBox="0 0 20 20">
+        <path d="M8 3h4"/>
+        <path d="M9 3v5.3l-4.6 7.4a1 1 0 0 0 .85 1.3h9.5a1 1 0 0 0 .85-1.3L11 8.3V3"/>
+        <line x1="6.6" y1="12" x2="13.4" y2="12"/>
+      </symbol>
+      <symbol id="icon-bed" viewBox="0 0 20 20">
+        <rect x="3" y="3" width="14" height="14"/>
+        <line x1="3" y1="8" x2="17" y2="8"/><line x1="3" y1="12" x2="17" y2="12"/>
+        <line x1="8" y1="3" x2="8" y2="17"/><line x1="12" y1="3" x2="12" y2="17"/>
+      </symbol>
+    </defs>
+  </svg>
+  <div class="bg-mesh" aria-hidden="true"></div>
   <div class="shell">
-    <header class="app-header">
-      <div class="brand"><span class="dot">🔦</span> Laser Auto-Align</div>
-      <span class="brand-sub">camera-guided alignment</span>
-    </header>
-    <nav class="tabs">
-      <a href="{{ url_for('index') }}" class="{{ 'active' if request.endpoint == 'index' }}">🏠 Dashboard</a>
-      <a href="{{ url_for('settings_page') }}" class="{{ 'active' if request.endpoint == 'settings_page' }}">⚙️ Settings</a>
-      <a href="{{ url_for('calibration_page') }}" class="{{ 'active' if request.endpoint == 'calibration_page' }}">🎯 Calibration</a>
-      <a href="{{ url_for('live_page') }}" class="{{ 'active' if request.endpoint == 'live_page' }}">📷 Live View</a>
-      <a href="{{ url_for('bed_page') }}" class="{{ 'active' if request.endpoint == 'bed_page' }}">🗺️ Bed View</a>
-      <a href="{{ url_for('design_page') }}" class="{{ 'active' if request.endpoint == 'design_page' }}">🎨 Design & Export</a>
-      <a href="{{ url_for('training_page') }}" class="{{ 'active' if request.endpoint == 'training_page' }}">🧪 Training Data</a>
-    </nav>
+    <div class="topbar" id="topbar">
+      <header class="app-header">
+        <div class="brand"><span class="dot">🔦</span> Laser Auto-Align</div>
+        <span class="brand-sub">camera-guided alignment</span>
+      </header>
+      <nav class="tabs">
+        <a href="{{ url_for('index') }}" class="{{ 'active' if request.endpoint == 'index' }}"><svg class="nav-icon"><use href="#icon-home"/></svg> Dashboard</a>
+        <a href="{{ url_for('settings_page') }}" class="{{ 'active' if request.endpoint == 'settings_page' }}"><svg class="nav-icon"><use href="#icon-settings"/></svg> Settings</a>
+        <a href="{{ url_for('calibration_page') }}" class="{{ 'active' if request.endpoint == 'calibration_page' }}"><svg class="nav-icon"><use href="#icon-target"/></svg> Calibration</a>
+        <a href="{{ url_for('live_page') }}" class="{{ 'active' if request.endpoint == 'live_page' }}"><svg class="nav-icon"><use href="#icon-camera"/></svg> Live View</a>
+        <a href="{{ url_for('bed_page') }}" class="{{ 'active' if request.endpoint == 'bed_page' }}"><svg class="nav-icon"><use href="#icon-bed"/></svg> Bed View</a>
+        <a href="{{ url_for('design_page') }}" class="{{ 'active' if request.endpoint == 'design_page' }}"><svg class="nav-icon"><use href="#icon-design"/></svg> Design &amp; Export</a>
+        <a href="{{ url_for('training_page') }}" class="{{ 'active' if request.endpoint == 'training_page' }}"><svg class="nav-icon"><use href="#icon-flask"/></svg> Training Data</a>
+      </nav>
+    </div>
     {% with messages = get_flashed_messages() %}
       {% if messages %}
         {% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}
@@ -334,5 +451,34 @@
     {% endwith %}
     {% block content %}{% endblock %}
   </div>
+<script>
+(function () {
+  var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---- sticky topbar snaps a hard edge on scroll ----
+  var topbar = document.getElementById('topbar');
+  function onScroll() {
+    if (window.scrollY > 12) topbar.classList.add('is-scrolled');
+    else topbar.classList.remove('is-scrolled');
+  }
+  document.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+
+  // ---- cards snap into place as they scroll into view ----
+  var cards = document.querySelectorAll('.card');
+  if (!reduceMotion && 'IntersectionObserver' in window) {
+    cards.forEach(function (card) { card.classList.add('reveal-init'); });
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('reveal-visible');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.08, rootMargin: '0px 0px -40px 0px' });
+    cards.forEach(function (card) { observer.observe(card); });
+  }
+})();
+</script>
 </body>
 </html>

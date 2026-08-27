@@ -5,28 +5,46 @@
 <div class="card">
   <h2>🏷️ Automatic calibration (ArUco markers)</h2>
 
-  <details {{ "open" if aruco_markers|length < aruco_min_required }}>
+  <details id="aruco-setup" {{ "open" if aruco_markers|length < aruco_min_required }}>
     <summary style="cursor:pointer; font-weight:600;">Setup &amp; marker registry ({{ aruco_markers|length }}/{{ aruco_min_required }} registered)</summary>
 
-    <p>Print these 4 markers and fix them <strong>permanently</strong> somewhere the camera
-    can always see, but a workpiece never covers - taped/screwed to the bed frame corners
-    works well. Register each one's real machine position <strong>once, ever</strong> (same
-    jog-and-enter-X/Y idea as a manual point below) - after that, recalibrating is one click.</p>
+    {% set corner_labels = ["top-left", "top-right", "bottom-left", "bottom-right"] %}
+    <p>Print these 4 markers and fix them <strong>permanently</strong> at the four corners of
+    the bed - somewhere the camera always sees but a workpiece never covers. Fix all four
+    <strong>the same way up</strong>, with the printed &#9650; pointing to the back of the
+    machine: marker 0 at the top-left corner, 1 top-right, 2 bottom-left, 3 bottom-right.</p>
+
+    <p>Each marker's reference point is <strong>one printed corner</strong> - the one inside
+    the bracket, facing away from the centre of the bed. Register it <strong>once, ever</strong>:
+    jog the laser dot exactly onto that corner, read the machine X/Y, and enter it below.
+    Place the markers so those four corners sit about as far out as the laser can actually
+    travel - then the calibrated area covers the whole reachable space. After all four are
+    registered, recalibrating is one click.</p>
 
     <div class="btn-row">
       {% for i in range(4) %}
       <div style="text-align:center;">
-        <img src="{{ url_for('aruco_marker_image', marker_id=i) }}" style="width:90px; height:90px; border:1px solid var(--border); background:white;">
-        <div class="hint">ID {{ i }} - <a href="{{ url_for('aruco_marker_image', marker_id=i) }}" download="marker_{{ i }}.png">download</a></div>
+        <img src="{{ url_for('aruco_marker_image', marker_id=i) }}" style="width:120px; height:120px; border:1px solid var(--border); background:white;">
+        <div class="hint">ID {{ i }} - {{ corner_labels[i] }} corner<br>
+          <a href="{{ url_for('aruco_marker_image', marker_id=i) }}" download="marker_{{ i }}.png">download</a></div>
       </div>
       {% endfor %}
     </div>
 
+    <p class="btn-row" style="align-items:center;">
+      <a class="btn primary" href="{{ url_for('aruco_marker_sheet') }}" target="_blank">🖨️ All four on one page (PDF)</a>
+      <a class="btn" href="{{ url_for('aruco_marker_sheet', paper='letter') }}" target="_blank">US Letter</a>
+    </p>
+    <p class="hint">40&nbsp;mm markers, one A4 page. Print at 100% / "Actual size" -
+      <strong>not</strong> "fit to page", which rescales the four unequally. The sheet has a
+      50&nbsp;mm bar to measure against. Cut out the whole square including the white border.</p>
+
     <table>
-      <tr><th>Marker ID</th><th>Registered position (mm)</th><th></th></tr>
+      <tr><th>Marker ID</th><th>Reference corner</th><th>Registered position (mm)</th><th></th></tr>
       {% for i in range(4) %}
       <tr>
         <td>{{ i }}</td>
+        <td>{{ corner_labels[i] }}</td>
         <td>{{ aruco_markers[i][0] ~ ", " ~ aruco_markers[i][1] if i in aruco_markers else "not registered" }}</td>
         <td>
           {% if i in aruco_markers %}
@@ -42,12 +60,12 @@
     <form method="post" action="{{ url_for('aruco_register') }}">
       <div class="btn-row" style="align-items:center;">
         <label style="margin:0;">Marker ID
-          <select name="marker_id" style="width:70px;">
-            {% for i in range(4) %}<option value="{{ i }}">{{ i }}</option>{% endfor %}
+          <select name="marker_id" style="width:150px;">
+            {% for i in range(4) %}<option value="{{ i }}">{{ i }} - {{ corner_labels[i] }}</option>{% endfor %}
           </select>
         </label>
-        <label style="margin:0;">Machine X (mm) <input type="number" step="0.01" name="machine_x_mm" style="width:100px;" required></label>
-        <label style="margin:0;">Machine Y (mm) <input type="number" step="0.01" name="machine_y_mm" style="width:100px;" required></label>
+        <label style="margin:0;">Machine X (mm) <input type="number" step="0.01" name="machine_x_mm" id="areg_x" style="width:100px;" required></label>
+        <label style="margin:0;">Machine Y (mm) <input type="number" step="0.01" name="machine_y_mm" id="areg_y" style="width:100px;" required></label>
         <button type="submit" class="btn" style="margin:0;">Register</button>
       </div>
     </form>
@@ -63,12 +81,14 @@
 </div>
 
 <div class="card">
-  <h2>🖼️ Bed area (recommended)</h2>
-  <p>Click two opposite corners of the <strong>actual bed surface</strong> in the photo
-  below - excluding the machine frame, cables, and belt/lead-screw track. Those areas have
-  fine repeating texture that's very sensitive to small lighting/vibration changes and can
-  get mistaken for an object; restricting detection to just the real bed surface fixes that
-  at the source instead of chasing threshold tweaks.</p>
+  <h2>🖼️ Bed area</h2>
+  <p><strong>Set automatically by "Calibrate now from markers"</strong> above - it's the box
+  bounded by the four markers' outer corners. Detection ignores everything outside it (the
+  machine frame, cables, and belt/lead-screw track have fine repeating texture that
+  otherwise gets mistaken for an object). Re-run calibrate-now any time the camera moves and
+  this updates with it.</p>
+  <p class="hint">You can still set it by hand below if a marker is missing or you want a
+  tighter box.</p>
   <p class="hint">Current bed area: {{ "X " ~ settings.bed_roi_px[0] ~ "-" ~ settings.bed_roi_px[2] ~ ", Y " ~ settings.bed_roi_px[1] ~ "-" ~ settings.bed_roi_px[3] if settings.bed_roi_px else "not set - whole frame is considered" }}</p>
 
   <div class="viewfinder">
@@ -143,8 +163,10 @@
     <button type="button" class="btn" onclick="gotoXY(parseFloat(document.getElementById('goto-x').value), parseFloat(document.getElementById('goto-y').value))">Go</button>
   </div>
   <div class="btn-row">
-    <button type="button" class="btn primary" onclick="useCurrentPosition()">📍 Use this position for the point below</button>
+    <button type="button" class="btn primary" onclick="useCurrentPosition()">📍 Use this position to register the selected marker</button>
   </div>
+  <p class="hint">Jog the laser dot onto a marker's bracketed corner, pick that marker's ID in
+    the registry above, then click this to fill in its X/Y.</p>
 
   <p class="hint">Icons from LightBurn's jog console we're intentionally <em>not</em>
   replicating here: the padlock (locks keyboard jogging - not applicable, we don't bind
@@ -155,50 +177,7 @@
   already has your machine's safe pointer power configured correctly.</p>
 </div>
 
-<div class="card">
-  <h2>🎯 Reference points</h2>
-  <p>For each point: jog the laser pointer to a spot (via LightBurn, or the jog control above),
-  read its real machine X/Y, click that same spot in the photo below, then enter the X/Y and
-  add the point. You need at least {{ min_points }} points, spread around the bed (not in a
-  straight line).</p>
-
-  <div class="viewfinder"><img id="snap" class="frame" src="{{ url_for('calibration_snapshot') }}?t={{ range(0,100000)|random }}"></div>
-  <div class="btn-row">
-    <button type="button" class="btn" onclick="document.getElementById('snap').src='{{ url_for('calibration_snapshot') }}?t=' + Date.now()">🔄 Refresh photo</button>
-  </div>
-
-  <form method="post" action="{{ url_for('calibration_add_point') }}" id="point-form" autocomplete="off">
-    <input type="hidden" name="pixel_x" id="pixel_x">
-    <input type="hidden" name="pixel_y" id="pixel_y">
-    <label>Clicked pixel <span id="pixel-readout" class="pixel-readout">(click the photo above)</span></label>
-    <label>Machine X (mm) <input type="number" step="0.01" name="machine_x_mm" id="machine_x_mm" autocomplete="off" required></label>
-    <label>Machine Y (mm) <input type="number" step="0.01" name="machine_y_mm" id="machine_y_mm" autocomplete="off" required></label>
-    <button type="submit" class="btn primary" id="add-point-btn" disabled>Add point (click the photo first)</button>
-  </form>
-</div>
-
-<div class="card">
-  <h2>📋 Points added ({{ points|length }})</h2>
-  <table>
-    <tr><th>#</th><th>Pixel</th><th>Machine (mm)</th></tr>
-    {% for p in points %}
-    <tr><td>{{ loop.index }}</td><td>{{ "%.0f"|format(p.pixel_x) }}, {{ "%.0f"|format(p.pixel_y) }}</td>
-        <td>{{ p.machine_x_mm }}, {{ p.machine_y_mm }}</td></tr>
-    {% endfor %}
-  </table>
-  <div class="btn-row">
-    <form method="post" action="{{ url_for('calibration_save') }}">
-      <button type="submit" class="btn primary">✅ Save calibration ({{ points|length }} point{{ 's' if points|length != 1 }})</button>
-    </form>
-    <form method="post" action="{{ url_for('calibration_reset') }}">
-      <button type="submit" class="btn">🗑️ Reset points</button>
-    </form>
-  </div>
-</div>
-
 <script>
-document.getElementById('point-form').reset();
-
 function showAlarm(show) {
   document.getElementById('alarm-banner').style.display = show ? 'block' : 'none';
 }
@@ -263,24 +242,12 @@ function useCurrentPosition() {
     alert('Not connected to the machine.');
     return;
   }
-  document.getElementById('machine_x_mm').value = lastPosition.x;
-  document.getElementById('machine_y_mm').value = lastPosition.y;
+  document.getElementById('aruco-setup').open = true;
+  const x = document.getElementById('areg_x'), y = document.getElementById('areg_y');
+  x.value = lastPosition.x;
+  y.value = lastPosition.y;
+  x.scrollIntoView({ block: 'center' });
 }
-
-const img = document.getElementById('snap');
-img.addEventListener('click', (e) => {
-  const rect = img.getBoundingClientRect();
-  const scaleX = img.naturalWidth / rect.width;
-  const scaleY = img.naturalHeight / rect.height;
-  const px = Math.round((e.clientX - rect.left) * scaleX);
-  const py = Math.round((e.clientY - rect.top) * scaleY);
-  document.getElementById('pixel_x').value = px;
-  document.getElementById('pixel_y').value = py;
-  document.getElementById('pixel-readout').textContent = `(${px}, ${py})`;
-  const btn = document.getElementById('add-point-btn');
-  btn.disabled = false;
-  btn.textContent = 'Add point';
-});
 
 // Bed-area (ROI) two-click corner selection
 const roiImg = document.getElementById('roi-snap');

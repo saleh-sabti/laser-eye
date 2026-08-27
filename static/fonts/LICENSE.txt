@@ -1,8 +1,7 @@
-Fraunces (fraunces-normal.woff2, fraunces-italic.woff2) - designed by Undercase Type,
-distributed under the SIL Open Font License 1.1. https://github.com/undercasetype/Fraunces
+Space Grotesk (spacegrotesk-latin.woff2, spacegrotesk-latin-ext.woff2) - designed by
+Florian Karsten, distributed under the SIL Open Font License 1.1.
+https://github.com/floriankarsten/space-grotesk
 
-Work Sans (worksans-normal.woff2, worksans-italic.woff2) - designed by Wei Huang,
-distributed under the SIL Open Font License 1.1. https://github.com/weiweihuanghuang/Work-Sans
-
-Both fetched from Google Fonts and self-hosted here so the app keeps working with no
-internet connection at the workbench - see CLAUDE.md.
+A variable font (weight axis 300-700; there is no true 900/"black" cut, so the heaviest
+weight this app can request is 700). Fetched from Google Fonts and self-hosted here so the
+app keeps working with no internet connection at the workbench - see CLAUDE.md.
