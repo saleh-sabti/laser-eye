@@ -225,6 +225,36 @@ Two input types, handled differently:
 the coordinate system these exports assume. A `flip_y` option exists in `export.py` for
 this but hasn't been confirmed necessary or unnecessary against a real burn yet.
 
+**MIRRORED-BURN BUG - diagnosed 2026-08-28, NOT yet fixed. Pick up here tomorrow.**
+The user traced a photo of hand-drawn calligraphy on a burl-wood offcut, exported, and
+opened it in LaserGRBL - it came out **mirrored** vs the physical ink. Root cause is in
+`placement.trace_image_to_mm`: it does `(x - cx, -(y - cy))` to turn image-Y-down into
+machine-Y-up. That single-axis negation is a reflection. For an SVG (authored in a
+Y-down space, `load_svg_mm` does the same negation) it's a harmless convention change;
+for a **photo of a board already lying on the bed** it makes the exported geometry a
+mirror image of the real ink. The editor preview does NOT catch it because the preview
+path runs design-mm -> machine-mm -> camera-px through `inv(H)`, and this overhead
+camera's homography has `det < 0` (its own reflection, from image-Y-down vs world), which
+cancels the trace's reflection *on screen only*. The export path skips the homography, so
+the file is mirrored.
+  - Probe test done: hand-wrote `printables/orientation_probe_F.svg` (a plain "F" in
+    Y-up machine mm, `flip_y=False` format) and had the user drop it into LaserGRBL. It
+    rendered **upside-down (Y-flipped) but NOT left-right mirrored** - the long arm drawn
+    at y=320 showed at the bottom, arms still point +X. So: LaserGRBL reads the SVG's Y
+    as top-down and burns it that way; **the axis to correct is Y, X is fine.**
+  - Likely fix (verify before burning wood): the photo path needs one more Y reflection
+    than it has now so the two cancel. Options: (a) turn on `flip_y` in Settings for the
+    export (`to_svg` already does `y -> bed_h - y`); (b) drop the `-(y-cy)` negation in
+    `trace_image_to_mm` only (leave `load_svg_mm` ALONE - the SVG path has never been
+    burned, no evidence it's wrong, and changing both at once means the next burn can't
+    tell you which fix was right). Decide with one more probe or a scrap burn, not by
+    reasoning - the LaserGRBL SVG->machine-Y mapping is the one unknown left.
+  - SEPARATE defect noted same day, do not fix in the same change: `fitToPiece` feeds
+    `cv2.minAreaRect`'s angle straight into `T.rot`, and that angle is ambiguous on a
+    near-square outline (seen as 84, 178, -132 deg for the same piece across runs) - the
+    burn's rotation will be unreliable until this is handled. User will set angle by hand
+    in the editor for now.
+
 ## RF-DETR: optional trained-model detection path
 
 The user found roboflow/rf-detr on GitHub and asked whether/how it could help. Assessed
@@ -518,6 +548,15 @@ both 200) before restarting the server.
 - The dev server is not persistent - it's tied to a terminal process and needs
   restarting after any reboot, long idle period, or crash. Check `http://localhost:5000/`
   before assuming it's up.
+- **Run the server with the Werkzeug auto-reloader OFF on this machine.** Because the
+  venv was physically moved to `C:\venvs\laser`, its `Scripts\python.exe` is a stub that
+  re-execs the base interpreter; combined with `debug=True`'s reloader (which re-execs
+  `sys.executable` on every file touch, and OneDrive touches files), `python app.py`
+  spawned a *nesting chain* of 4+ processes all fighting over port 5000 and the camera -
+  server "sometimes works, sometimes doesn't", editor state (module globals) flickering
+  on/off between processes, camera-contention crashes. Start it instead with:
+  `C:\venvs\laser\Scripts\python -c "import app; app.app.run(host='0.0.0.0', port=5000, threaded=True, debug=True, use_reloader=False)"`
+  (keeps the debugger, kills the fork storm). After any code edit, restart it by hand.
 - The user communicates partly via voice-to-text, which sometimes garbles technical
   terms badly (e.g. "Google Adfluence motivation" for a completely unrelated question
   about ArUco/homography calibration points; "water axis" for "Y axis"). When a message
@@ -534,13 +573,25 @@ homography (`mm_to_px` = `inv(H)`), so it's WYSIWYG on the real bed. Drag / rota
 / scale handle, or type exact X / Y / W / H / angle mm; "Fit to piece" snaps to the
 detected centroid + angle + a scale that fits the oriented bbox; clip-to-outline toggle
 uses `placement.clip_to_outline` (shapely). Export applies `placement.place(...)` and
-writes an absolute-mm SVG via the existing `export.write_svg` (with `settings["flip_y"]`),
-after a round-trip guard that the exported bbox centre == the requested (tx, ty). Editor
-state lives in module globals (`_place_polylines` etc.), like the rest of app.py.
+writes an absolute-mm SVG via the existing `export.write_svg` (with `settings["flip_y"]`).
+Editor state lives in module globals (`_place_polylines` etc.), like the rest of app.py.
 
 **Verified in-session**: SVG parse, auto-fit, drag (updates tx/ty in mm correctly through
 the homography even though this machine's X is vertical / inverted in the image), numeric
 fields, export round-trip, download. Rendered correctly on the real bed photo.
+
+**Export guard bug found + fixed (2026-08-28, uncommitted).** `/design/place/export` had
+a "round-trip guard" that rejected the export unless `polylines_bbox_center(placed)` was
+within 0.5 mm of the requested `(tx, ty)`. But `place()` pins the design's *un-rotated*
+bbox centre to `(tx, ty)`; once the design is rotated (and "Fit to piece" always applies
+the piece angle) the axis-aligned bbox centre legitimately moves, so the guard fired on
+every realistic export - "Internal check failed: exported centre (...) != requested
+(...)". The editor canvas (`placePt` in design_editor.html) applies the identical
+transform, so the SVG genuinely lands where the canvas draws it - the guard was checking
+an invariant `place()` never promised (clipping was already exempted for the same
+reason). Replaced it with a real sanity check: reject only if the placed geometry is
+degenerate (near-zero extent) or runs off the bed. Verified: angle-0 and angle-84 exports
+both write correct absolute-mm SVGs now.
 
 **Photos now go through the editor too (2026-08-28)**: a PNG/JPEG upload runs
 background removal on a thread (progress bar via `/design/photo_status`), then
@@ -557,6 +608,17 @@ to keep **only** rembg in the daemon thread and do the cv2 trace lazily in the
 `/design/place` request thread (request threads run cv2 fine - Live View's marker
 detection already does). Also added a watchdog in `_photo_job_progress` (error out after
 `max(150s, 8*avg)`) so a stall can't hang the UI.
+
+**Second real bug in the photo flow, found + fixed 2026-08-28 (uncommitted).** The photo
+job *always* failed - background removal ran fine, then `_run_photo_job` crashed on its
+last line calling `url_for("design_place")` from the daemon thread ("RuntimeError:
+Working outside of application context"). The `except` block only wrapped the rembg call,
+so the thread just died with `_photo_job` stuck in `state="working"` - the progress bar
+climbed, eased toward 95 %, then the watchdog eventually reported "timed out ... try a
+simpler image". Looked like rembg/the image was the problem; it never was. Fixed by
+resolving `url_for` in the request thread and passing the string into `_run_photo_job`.
+Verified end-to-end: PNG upload -> bg removal `state:"done"` in ~24 s -> `/design/place`
+opens with the traced silhouette.
 
 **Still to do**: one test SVG import into LightBurn to settle `flip_y`; raster export +
 LaserGRBL position card (right now a traced photo exports as SVG line work, same as any

@@ -456,7 +456,8 @@ _PHOTO_STAGES = [
 ]
 
 
-def _run_photo_job(photo_bytes: bytes, frame_jpg: bytes, det: "detection.Detection") -> None:
+def _run_photo_job(photo_bytes: bytes, frame_jpg: bytes, det: "detection.Detection",
+                   place_url: str = "/design/place") -> None:
     """Background-remove a raster upload. Only the rembg call runs here -
     the cv2 trace is done later in the request thread (`design_place`),
     because cv2.findContours in this daemon thread deadlocks once torch is
@@ -487,7 +488,7 @@ def _run_photo_job(photo_bytes: bytes, frame_jpg: bytes, det: "detection.Detecti
     _last_export_path = None
     with _photo_job_lock:
         _photo_job.update(state="done", done=True, took_s=round(took, 1),
-                          redirect=url_for("design_place"))
+                          redirect=place_url)
 
 
 def _photo_job_progress() -> dict:
@@ -563,7 +564,11 @@ def design_page():
             ok, buf = cv2.imencode(".jpg", frame)
             with _photo_job_lock:
                 _photo_job = {"state": "queued", "t0": time.time(), "stage": "starting", "stage_i": 0}
-            threading.Thread(target=_run_photo_job, args=(photo_bytes, buf.tobytes(), det), daemon=True).start()
+            # resolve the redirect URL here, in the request context - url_for()
+            # blows up in the worker thread ("working outside of application context")
+            place_url = url_for("design_place")
+            threading.Thread(target=_run_photo_job,
+                             args=(photo_bytes, buf.tobytes(), det, place_url), daemon=True).start()
             return jsonify({"ok": True, "photo_job": True})
 
         return jsonify({"ok": False, "error": f"Unsupported file type '{ext}' - use .svg, .png, or .jpg."})
@@ -670,11 +675,21 @@ def design_place_export():
         if not placed:
             return jsonify({"ok": False, "error": "Clipping left nothing - the design is entirely outside the piece."})
 
-    # round-trip guard: what we write must be centred where the editor asked
-    cx, cy = placement.polylines_bbox_center(placed)
-    if not clip and (abs(cx - tx) > 0.5 or abs(cy - ty) > 0.5):
+    # sanity guard: the placed geometry must be non-degenerate and land on the
+    # bed. (Not a centre-equality check - place() pins the design's *un-rotated*
+    # bbox centre to (tx, ty), so the axis-aligned bbox centre legitimately
+    # shifts once the design is rotated or clipped; that's WYSIWYG with the
+    # editor canvas, which applies the identical transform.)
+    xs = [x for line in placed for x, _ in line]
+    ys = [y for line in placed for _, y in line]
+    bed_w, bed_h = settings["bed_width_mm"], settings["bed_height_mm"]
+    if not xs or max(xs) - min(xs) < 1.0 or max(ys) - min(ys) < 1.0:
         return jsonify({"ok": False, "error":
-            f"Internal check failed: exported centre ({cx:.1f}, {cy:.1f}) != requested ({tx:.1f}, {ty:.1f})."})
+            "Internal check failed: the placed design came out with near-zero size - check the scale."})
+    if min(xs) < -1.0 or min(ys) < -1.0 or max(xs) > bed_w + 1.0 or max(ys) > bed_h + 1.0:
+        return jsonify({"ok": False, "error":
+            f"The placed design runs off the bed: X {min(xs):.0f}..{max(xs):.0f}, "
+            f"Y {min(ys):.0f}..{max(ys):.0f} mm (bed {bed_w:.0f} x {bed_h:.0f} mm)."})
 
     aligned = placement.to_aligned_design(placed)
     out_path = str(Path(tempfile.gettempdir()) / "laser_align_export.svg")
@@ -684,8 +699,6 @@ def design_place_export():
     _last_export_kind = "svg"
     _last_placement_info = None
 
-    xs = [x for line in placed for x, _ in line]
-    ys = [y for line in placed for _, y in line]
     return jsonify({
         "ok": True,
         "center_mm": [round(tx, 1), round(ty, 1)],
