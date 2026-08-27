@@ -275,17 +275,16 @@ then threshold slider + alpha-matting toggle + method picker + brush.
 
 ---
 
-## Housekeeping (requested)
+## Housekeeping
 
-- Commit this plan + `printables/` + `screenshots/` to git; update `context.md` with a
-  section on this planning session and the decisions above; push to `origin/main`
-  (`github.com/saleh-sabti/laser-eye`).
-- **Refresh the README media to the redesigned UI.** `docs/demo.gif`,
-  `docs/design-export.png`, `docs/screen-recording.gif` all predate the UI redesign
-  (commits `2d47c0e`, `ef6bec5`) and still show the old bare-HTML look. Needs the Flask
-  app running with the camera connected — capture fresh screenshots of each page and a
-  new screen recording, swap them into `README.md`, re-push. **This is a separate
-  hands-on step** (app must be up at `localhost:5000`).
+- ✅ Plan + `printables/` + `screenshots/` committed; `context.md` updated; pushed.
+- ✅ Neubrutalist white UI merged to `main` (`e204ca3` + merge `34c03ba`); the
+  `nervous-lalande-bda051` worktree and branch removed.
+- ✅ README media refreshed to the new UI (`ui-dashboard.jpg`, `ui-calibration.jpg`,
+  `bed-view-rectified.jpg`); stale old-UI `demo.gif` / `design-export.png` /
+  `screen-recording.gif` removed; design-log entries added for the redesign, the
+  ArUco-only switch, and Bed View.
+- ⬜ User has newer screen recordings to add to the README — waiting on the files.
 
 ---
 

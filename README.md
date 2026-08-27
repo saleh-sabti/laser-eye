@@ -11,13 +11,15 @@ jogging the head around and eyeballing the alignment. This fixes that: point a w
 the bed, and it figures out where your workpiece actually is - the real outline, not
 just a rough box - and lines your design up automatically.
 
-![Detecting an irregular piece the moment it's placed on the bed](docs/demo.gif)
+![Dashboard - system status at a glance](docs/ui-dashboard.jpg)
 
-*Placing a piece by hand - the outline locks onto it live, no manual jogging.*
+*The dashboard: camera, calibration, and reference-frame status in one place.*
 
-![Design & Export page](docs/design-export.png)
+![Bed View - the camera frame warped straight overhead](docs/bed-view-rectified.jpg)
 
-*Detected outline shown before you commit to exporting anything.*
+*Bed View warps the camera frame to a true top-down image using the calibration, so
+screen position maps straight to machine mm - the basis for placing a design exactly
+where it'll burn.*
 
 ## How it works
 
@@ -33,10 +35,17 @@ something got placed.
 - Aligns an uploaded **photo**: background removed automatically, rotated to match the
   workpiece's orientation, exported as a plain PNG (with the target position reported),
   since raster laser software burns images axis-aligned with no rotation of its own.
+- **Bed View** - a live top-down (rectified) render of the bed, where screen position is
+  real machine mm. Click any point to jog the head there and confirm the mapping is right
+  without firing the laser.
+- **Calibration is ArUco-only**: print the four markers (there's a one-page PDF built in),
+  fix them at the bed corners, register each corner's machine position once, and
+  "Calibrate now" re-fits the homography and the bed area from whatever's in frame. No
+  more clicking reference points by hand every time the camera moves.
 - Optional direct GRBL connection for jogging/calibration convenience (never for running
   burn jobs - that stays in LightBurn/LaserGRBL).
-- One-click automatic calibration via 4 fixed ArUco markers, as an alternative to
-  clicking through manual reference points every time.
+- `flip_y` export toggle for when LightBurn's workspace origin disagrees with the
+  machine's Y direction.
 - Optional RF-DETR-based detection as a trained-model alternative to the classical
   background-subtraction method, once enough samples are collected through the app's own
   data-collection page.
@@ -195,6 +204,47 @@ remembering to call it.
 *Live detection today, after both calibration bugs above - a real dimension label
 instead of "0 x 0mm" or six-figure nonsense, on a real piece.*
 
+**Manual reference-point calibration was removed entirely - ArUco is now the only path.**
+The one-click ArUco calibration above started as an *alternative* to clicking points by
+hand. In practice nobody went back to the manual flow once the markers were up, and
+keeping two calibration code paths (each with its own UI, its own edge cases) earned
+nothing. Decision: delete manual point entry. ArUco calibration got the attention that
+freed up instead - a built-in one-page **PDF marker sheet** (print at 100%, with a 50 mm
+scale bar to check the printer didn't rescale), a printed right-angle bracket around each
+marker's *reference corner* so the point you jog to and the point the app detects are
+physically the same spot, sub-pixel corner detection, and "Calibrate now" also setting
+the bed area from the four markers in the same pass.
+
+**Bed View: a rectified top-down render, and the coordinate convention it forced.**
+Placing a design "exactly where it burns" is only meaningful if the app's millimetres
+match the real bed's. Bed View warps the camera frame straight overhead
+(`cv2.warpPerspective` through the calibration homography) so screen position is machine
+mm by a single scalar - which also makes a bad calibration *visible* (a sheared or bowed
+bed is the homography, not the thing drawn on top of it). Click-to-jog moves the head to
+a clicked point so you can check the mapping against the real machine, no laser fired.
+This also surfaced that the SVG export's Y-axis convention versus LightBurn's workspace
+origin had never been verified against a real burn - now a `flip_y` setting, to be
+confirmed once against an import rather than assumed.
+
+![Bed View - detected outline drawn in real mm over the rectified bed, with a 50 mm reference grid](docs/bed-view-rectified.jpg)
+
+*The rectified bed with the detected outline drawn straight in mm (no re-warping) and a
+50 mm grid. The jagged outline here is a separate, still-open detection-quality issue -
+the geometry underneath it is what Bed View is for.*
+
+**Full UI redesign - from a soft "editorial" theme to a hard machine-panel look.**
+The earlier UI leaned warm and typographic (serif display face, parchment background,
+automatic dark mode). It read more like a blog than a tool you stand at a workbench and
+operate. Redesigned around function: white/graph-paper ground, Space Grotesk throughout,
+4px black borders and hard offset shadows, SVG line icons, a sticky top bar. Same
+component classes (`.card`, `.btn`, `.viewfinder`, ...), so every page re-themed at once
+and new pages inherit it for free.
+
+![Calibration page in the redesigned UI - ArUco setup collapsed once all four markers are registered](docs/ui-calibration.jpg)
+
+*Calibration after the redesign and the ArUco-only switch - the marker setup collapses
+itself once all four are registered, leaving just "Calibrate now".*
+
 ## Hardware you'll need
 
 - A GRBL-based engraver (built against a Comgrow machine)
@@ -211,9 +261,12 @@ python -m venv .venv
 ```
 
 Then open `http://localhost:5000`. First time through: set your camera and bed size in
-Settings, then head to Calibration - capture an empty-bed reference photo, mark out the
-actual bed area, and add a few reference points (or register 4 ArUco markers once and
-use "Calibrate now" from then on). After that it's just Design & Export for every job.
+Settings; print the ArUco marker sheet from the Calibration page and fix one marker at
+each bed corner; register each marker's machine position once (jog to its bracketed
+corner, read the X/Y, enter it); capture an empty-bed reference photo from Live View;
+then hit "Calibrate now". After that it's just Design & Export (and Bed View to place
+things by hand) for every job - and one click on "Calibrate now" any time the camera
+gets bumped.
 
 RF-DETR needs its own CUDA-matched PyTorch install if you want to use it - see
 `CLAUDE.md` for the exact commands.

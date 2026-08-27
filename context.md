@@ -369,16 +369,47 @@ pair that caused this.
 
 ## UI
 
-Redesigned from bare default-browser-styled HTML into a proper design system on request
-("modern UI/UX") - CSS custom-property tokens with automatic dark-mode support via
-`prefers-color-scheme`, card-based layout, pill navigation with active-page highlighting,
-consistent buttons/badges/inputs. All self-contained (system font stack, no external CDN
-calls) so it keeps working with zero internet dependency at the workbench - deliberately
-consistent with the project's "runs standalone" philosophy throughout.
+**Current design (2026-08-27 redesign): neubrutalist machine-panel look.** White /
+graph-paper ground (`--bg: #FFFDF5`), Space Grotesk throughout (self-hosted woff2,
+`static/fonts/spacegrotesk-*`), 4px solid black borders, hard offset shadows
+(`8px 8px 0 0 #000`), coral/yellow accents, SVG line icons (inline `<symbol>` defs in
+`base.html`), sticky top bar, scroll-reveal on cards. **No dark mode** - deliberately
+dropped; the earlier version's `prefers-color-scheme` dark palette is gone. Still fully
+self-contained (no CDN calls). All component styling lives in `base.html` as shared
+classes (`.card`, `.btn`, `.viewfinder`, `.flash`, `.badge`, `.pixel-readout`, ...), so
+every page re-themes at once and new pages inherit it.
 
-Pages: Dashboard, Settings (camera/bed/detection-method/GRBL-port config), Calibration
-(reference points + optional direct GRBL jog panel), Live View, Design & Export,
-Training Data (RF-DETR dataset collection).
+This replaced an earlier "editorial" theme (Fraunces serif display face, parchment
+background, automatic dark mode) that read more like a blog than a tool. The redesign was
+built on another machine, sat uncommitted in a git worktree
+(`.claude/worktrees/nervous-lalande-bda051`), reached this machine via OneDrive sync, and
+was merged to `main` on 2026-08-27 (commit `e204ca3` + merge `34c03ba`); the worktree and
+branch were then removed.
+
+Pages: Dashboard, Settings (camera/bed/detection-method/GRBL-port/`flip_y` config),
+Calibration (ArUco marker setup + PDF sheet + direct GRBL jog panel), Live View, Bed View
+(rectified top-down + click-to-jog), Design & Export, Training Data (RF-DETR dataset
+collection).
+
+**Manual point-clicking calibration was removed entirely in the same redesign.**
+`/calibration/add_point`, `/calibration/reset`, `/calibration/save`, `_pending_points`,
+and the manual-points card in `calibration.html` are all gone. ArUco is the only
+calibration path now (it always fed the same `save_calibration()` anyway). `aruco_calibration.py`
+gained `build_marker_sheet()` (one-page PDF, all four markers at 40 mm + a 50 mm scale
+bar, via Pillow), per-marker outward-corner reference points with a printed bracket
+(`generate_marker_image` draws it; `detect_markers` sub-pixel-refines that same corner via
+`cv2.cornerSubPix`), and `auto_calibrate()` now also writes `bed_roi_px` from the four
+detected marker corners in the same call. `calibration.py` still defines `CalibrationPoint`
+/ `find_duplicate_conflict` / `MIN_POINTS` - unused by the app now but kept (the
+compute/save/guard code still uses them internally).
+
+**Bed View (`templates/bed.html`, `laser_align/rectify.py`, `/bed*` routes).** Warps the
+live camera frame to a true top-down image via `S @ H` (`S` scales to `px_per_mm` and
+flips Y so machine Y points up). `view_px_to_mm` / `mm_to_view_px` are the scalar
+conversions; `draw_mm_polyline` draws the detected outline straight in mm with no
+re-warping; `draw_grid` adds a labelled 50 mm grid. `/bed/jog_to_point` reuses
+`_grbl_call(g.jog_to(...))` - same jog-only connection as calibration, never fires the
+laser. This is the foundation for the not-yet-built placement editor (see the plan doc).
 
 **Calibration page decluttered, reference-frame capture moved to Live View
 (2026-08-22).** Two user complaints once ArUco calibration (above) existed alongside the
@@ -462,8 +493,10 @@ both 200) before restarting the server.
 
 ## Planned next: placement editor + background-removal rework (2026-08-27)
 
-Design proposal written to `docs/manual_placement_and_bg_removal_plan.md` - not built
-yet. Summary of what was decided this session:
+Design proposal in `docs/manual_placement_and_bg_removal_plan.md`. **Progress:** Bed View
+(rectified top-down + click-to-jog) and the `flip_y` setting are built and on `main`. The
+placement editor itself (auto-fit + manual drag), the LaserGRBL Position Card, and the
+background-removal rework are still to do. Summary of what was decided:
 
 - **Placement editor** on a *rectified* (top-down, `cv2.warpPerspective(frame, S @ H,
   ...)`) view of the bed, so all in-browser placement math is affine, not perspective.
@@ -500,6 +533,7 @@ yet. Summary of what was decided this session:
   raster; needs `GEMINI_API_KEY` + internet, clearly marked, local rembg stays default.
 - Still no real end-to-end burn - the user is waiting on the placement/positioning
   story to be trustworthy first.
-- README media (`docs/demo.gif`, `design-export.png`, `screen-recording.gif`) still
-  shows the pre-redesign bare-HTML UI and needs refreshing against the current UI (a
-  hands-on step - needs the app running with the camera).
+- README media refreshed to the new UI (2026-08-27): `docs/ui-dashboard.jpg`,
+  `docs/ui-calibration.jpg`, `docs/bed-view-rectified.jpg` added; the old pre-redesign
+  `demo.gif` / `design-export.png` / `screen-recording.gif` removed. The user has newer
+  screen recordings to add on top - not yet supplied as files.
