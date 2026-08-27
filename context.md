@@ -459,3 +459,47 @@ both 200) before restarting the server.
   about ArUco/homography calibration points; "water axis" for "Y axis"). When a message
   doesn't parse, it's very often worth interpreting it in light of the immediately
   preceding topic rather than taking it literally.
+
+## Planned next: placement editor + background-removal rework (2026-08-27)
+
+Design proposal written to `docs/manual_placement_and_bg_removal_plan.md` - not built
+yet. Summary of what was decided this session:
+
+- **Placement editor** on a *rectified* (top-down, `cv2.warpPerspective(frame, S @ H,
+  ...)`) view of the bed, so all in-browser placement math is affine, not perspective.
+  Two modes: **auto-fit** (detect piece -> place design inside the outline, centered/
+  rotated/scaled - essentially today's `align_and_clip`/`align_photo` shown on the bed
+  view) and **manual** (drag/rotate/tilt/scale + numeric mm entry, starting from the
+  auto-fit placement). Runs on a *frozen snapshot*, not the MJPEG stream. Manual mode
+  needs only calibration, not a detection.
+- **BLOCKER identified: the Y-axis / LightBurn coordinate convention is still
+  unverified.** `export.write_svg` has a `flip_y` arg that `app.py` never passes
+  (hardcoded False, no setting). Survivable for auto-align (design still lands on the
+  piece); fatal for manual placement. The user already sees the symptom - the red
+  centroid crosshair on the preview "doesn't show the actual place" any more. Likely
+  either stale calibration (wiped several times, still needs redoing) or the Y flip.
+  Plan: wire `flip_y` into settings + a Settings toggle, add a "jog head to a clicked
+  point on the rectified bed" check, then one test SVG import into LightBurn. **This is
+  step 1, before the editor is worth building.**
+- **Raster/LaserGRBL placement**: the user's core complaint is the photo export is
+  "just a cutout" - LaserGRBL asks for a size but there's no way to say *where*.
+  LaserGRBL has no absolute-coordinate workspace (engraves from the head's current
+  position). Fix = a **Position Card** with every raster export: image size, the corner
+  machine X/Y to jog to, a "jog head there now" button (reuses `grbl.jog_to`), then
+  LaserGRBL steps (set origin = current position, set size, engrave). LightBurn users
+  get an SVG-wrapped base64 `<image>` at absolute mm instead (one unified path, verify
+  once).
+- **Background removal** - confirmed symptom is **ragged/fuzzy edges** (worst case for a
+  laser). Fix, local/offline first: binarize the alpha at an adjustable threshold ->
+  keep largest connected component -> smooth the binary contour -> optional alpha
+  matting -> optional model swap (check installed rembg sessions first) -> manual
+  erase/restore brush. Plus: run `remove()` in a background thread with a poll endpoint
+  so the UI shows elapsed time + ETA instead of hanging. Plus optional **Gemini ("nano
+  banana") method** (setting, like `detection_method`) - user's manual workflow is
+  "remove background, white background, black crisp edges", which is ideal for laser
+  raster; needs `GEMINI_API_KEY` + internet, clearly marked, local rembg stays default.
+- Still no real end-to-end burn - the user is waiting on the placement/positioning
+  story to be trustworthy first.
+- README media (`docs/demo.gif`, `design-export.png`, `screen-recording.gif`) still
+  shows the pre-redesign bare-HTML UI and needs refreshing against the current UI (a
+  hands-on step - needs the app running with the camera).
