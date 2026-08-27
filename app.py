@@ -14,7 +14,7 @@ from flask import Flask, Response, render_template, request, redirect, url_for, 
 
 from laser_align import config, calibration, detection, align, export, photo_align, dataset, rfdetr_detect, grbl, aruco_calibration
 from laser_align.camera import Camera, probe_devices
-from laser_align.calibration import CalibrationPoint, CalibrationError
+from laser_align.calibration import CalibrationError
 from laser_align.detection import NoReferenceFrameError, NoObjectFoundError
 from laser_align.grbl import Grbl, GrblError, GrblAlarmError
 from laser_align.aruco_calibration import NoMarkersConfiguredError, NotEnoughMarkersDetectedError
@@ -23,7 +23,6 @@ app = Flask(__name__)
 app.secret_key = "laser-auto-align-local"  # local-only tool, no real auth surface
 
 _camera: Camera | None = None
-_pending_points: list[CalibrationPoint] = []
 _last_export_path: str | None = None
 _last_export_kind: str | None = None   # "svg" or "png"
 _last_placement_info: dict | None = None  # only set for photo (png) exports
@@ -116,8 +115,6 @@ def _jpeg_response(frame) -> Response:
 def calibration_page():
     return render_template(
         "calibration.html",
-        points=_pending_points,
-        min_points=calibration.MIN_POINTS,
         has_reference=detection.has_reference_frame(),
         settings=config.load_settings(),
         aruco_markers=aruco_calibration.load_marker_positions(),
@@ -128,58 +125,6 @@ def calibration_page():
 @app.route("/calibration/snapshot.jpg")
 def calibration_snapshot():
     return _jpeg_response(get_camera().read())
-
-
-@app.route("/calibration/add_point", methods=["POST"])
-def calibration_add_point():
-    try:
-        point = CalibrationPoint(
-            pixel_x=float(request.form["pixel_x"]),
-            pixel_y=float(request.form["pixel_y"]),
-            machine_x_mm=float(request.form["machine_x_mm"]),
-            machine_y_mm=float(request.form["machine_y_mm"]),
-        )
-    except (KeyError, ValueError):
-        flash("Click a point on the photo before adding it - pixel coordinates were missing.")
-        return redirect(url_for("calibration_page"))
-
-    settings = config.load_settings()
-    bed_w, bed_h = settings["bed_width_mm"], settings["bed_height_mm"]
-    margin = 10.0  # a little slack in case the bed's usable area runs slightly past the nominal size
-    if not (-margin <= point.machine_x_mm <= bed_w + margin) or not (-margin <= point.machine_y_mm <= bed_h + margin):
-        flash(
-            f"Point not added: ({point.machine_x_mm}, {point.machine_y_mm}) mm is outside "
-            f"the configured {bed_w}x{bed_h}mm bed - double check what LightBurn actually "
-            f"showed for this position (or fix the bed size in Settings if it's wrong)."
-        )
-        return redirect(url_for("calibration_page"))
-
-    conflict = calibration.find_duplicate_conflict(_pending_points, point)
-    if conflict:
-        flash(f"Point not added: {conflict}")
-        return redirect(url_for("calibration_page"))
-
-    _pending_points.append(point)
-    return redirect(url_for("calibration_page"))
-
-
-@app.route("/calibration/reset", methods=["POST"])
-def calibration_reset():
-    _pending_points.clear()
-    return redirect(url_for("calibration_page"))
-
-
-@app.route("/calibration/save", methods=["POST"])
-def calibration_save():
-    settings = config.load_settings()
-    try:
-        calibration.save_calibration(
-            _pending_points, settings["camera_width"], settings["camera_height"]
-        )
-        flash("Calibration saved.")
-    except CalibrationError as e:
-        flash(f"Calibration failed: {e}")
-    return redirect(url_for("calibration_page"))
 
 
 @app.route("/calibration/capture_reference", methods=["POST"])
@@ -194,6 +139,18 @@ def aruco_marker_image(marker_id):
     img = aruco_calibration.generate_marker_image(marker_id)
     ok, buf = cv2.imencode(".png", img)
     return Response(buf.tobytes(), mimetype="image/png")
+
+
+@app.route("/calibration/aruco/sheet.pdf")
+def aruco_marker_sheet():
+    paper = request.args.get("paper", "a4")
+    if paper not in ("a4", "letter"):
+        paper = "a4"
+    return Response(
+        aruco_calibration.build_marker_sheet(paper),
+        mimetype="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="aruco_markers_{paper}.pdf"'},
+    )
 
 
 @app.route("/calibration/aruco/register", methods=["POST"])
@@ -223,7 +180,7 @@ def aruco_calibrate_now():
     frame = get_camera().read()
     try:
         aruco_calibration.auto_calibrate(frame, settings["camera_width"], settings["camera_height"])
-        flash("Auto-calibrated from markers.")
+        flash("Auto-calibrated and set the bed area from the four markers.")
     except (NoMarkersConfiguredError, NotEnoughMarkersDetectedError, CalibrationError) as e:
         flash(f"Auto-calibration failed: {e}")
     return redirect(url_for("calibration_page"))
