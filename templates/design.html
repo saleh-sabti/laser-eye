@@ -10,15 +10,10 @@
 
 <div class="card">
   <h2>🎨 Upload a design</h2>
-  <p>Put the workpiece on the bed, then upload:</p>
-  <ul>
-    <li><strong>An SVG</strong> (line art, logos, text) — opens the hand-placement editor:
-      move, rotate, scale it onto the piece, then export an SVG in absolute machine mm that
-      burns exactly where you put it.</li>
-    <li><strong>A photo</strong> (PNG/JPEG) — background removed locally, rotated to the
-      piece, exported as a plain PNG with the target position reported. (Hand-placement for
-      photos is coming next.)</li>
-  </ul>
+  <p>Put the workpiece on the bed, then upload a design — <strong>SVG</strong> for line
+  art / logos / text, or a <strong>PNG/JPEG</strong> (its background is removed and it's
+  traced to paths). Either way it opens the hand-placement editor: move, rotate, scale it
+  onto the piece, then export in absolute machine mm so it burns exactly where you put it.</p>
 
   <form id="up-form" enctype="multipart/form-data">
     <label>Design file <input type="file" name="design_file" id="design_file" accept=".svg,.png,.jpg,.jpeg" required></label>
@@ -33,12 +28,6 @@
     </div>
   </div>
 
-  <div id="photo-result" style="display:none; margin-top:1.2rem; border:3px solid #000; padding:0.9rem 1rem; box-shadow:var(--shadow-sm);">
-    <p style="margin:0 0 0.6rem; font-weight:700;">✓ Background removed and aligned</p>
-    <table id="photo-table" style="margin-bottom:0.8rem;"></table>
-    <a class="btn primary" id="photo-dl" href="#">⬇️ Download aligned_design.png</a>
-  </div>
-
   {% if has_placement %}
   <div class="btn-row" style="margin-top:1rem;">
     <a class="btn primary" href="{{ url_for('design_place') }}">🖐️ Back to the placement editor</a>
@@ -51,20 +40,6 @@
   <div class="viewfinder"><img class="frame" src="{{ url_for('design_preview') }}?t={{ range(0,100000)|random }}"></div>
 </div>
 
-{% if last_export and export_kind == "png" and placement %}
-<div class="card">
-  <h2>📦 Export</h2>
-  <p>Photo aligned as a plain PNG (rotation already baked in). Set your machine's job origin
-  to this target position before running it:</p>
-  <table>
-    <tr><th>Target center (mm)</th><td>X {{ placement.target_x_mm }}, Y {{ placement.target_y_mm }}</td></tr>
-    <tr><th>Object angle</th><td>{{ placement.angle_deg }}&deg; (already applied to the image)</td></tr>
-    <tr><th>Image size</th><td>{{ placement.width_mm }} &times; {{ placement.height_mm }} mm</td></tr>
-  </table>
-  <a class="btn primary" href="{{ url_for('design_export') }}">⬇️ Download aligned_design.png</a>
-</div>
-{% endif %}
-
 <script>
 const form = document.getElementById('up-form');
 const btn = document.getElementById('up-btn');
@@ -75,8 +50,7 @@ const progLabel = document.getElementById('prog-label');
 
 form.addEventListener('submit', (e) => {
   e.preventDefault();
-  const f = document.getElementById('design_file').files[0];
-  if (!f) return;
+  if (!document.getElementById('design_file').files[0]) return;
   err.textContent = '';
   btn.disabled = true; btn.textContent = 'Loading…';
   fetch('{{ url_for("design_page") }}', { method: 'POST', body: new FormData(form) })
@@ -84,7 +58,7 @@ form.addEventListener('submit', (e) => {
     .then(d => {
       if (!d.ok) { err.textContent = d.error; btn.disabled = false; btn.textContent = '📂 Load design'; return; }
       if (d.redirect) { location.href = d.redirect; return; }
-      if (d.photo_job) { btn.textContent = 'Processing photo…'; progWrap.style.display = 'block'; pollPhoto(); }
+      if (d.photo_job) { btn.textContent = 'Processing…'; progWrap.style.display = 'block'; pollPhoto(); }
     })
     .catch(() => { err.textContent = 'Upload failed.'; btn.disabled = false; btn.textContent = '📂 Load design'; });
 });
@@ -102,17 +76,8 @@ function pollPhoto() {
     progFill.style.width = (d.pct || 0) + '%';
     if (d.state === 'done') {
       progFill.style.width = '100%';
-      progLabel.textContent = `Done in ${d.elapsed_s}s.`;
-      btn.disabled = false; btn.textContent = '📂 Load another';
-      const p = d.placement || {};
-      document.getElementById('photo-table').innerHTML =
-        `<tr><th>Target centre (mm)</th><td>X ${p.target_x_mm}, Y ${p.target_y_mm}</td></tr>` +
-        `<tr><th>Angle</th><td>${p.angle_deg}° (baked into the image)</td></tr>` +
-        `<tr><th>Image size</th><td>${p.width_mm} × ${p.height_mm} mm</td></tr>`;
-      const dl = document.getElementById('photo-dl');
-      dl.href = (d.download_url || '{{ url_for("design_export") }}') + '?t=' + Date.now();
-      document.getElementById('photo-result').style.display = 'block';
-      document.getElementById('photo-result').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      progLabel.textContent = `Background removed in ${d.elapsed_s}s — opening the editor…`;
+      setTimeout(() => { location.href = d.redirect || '{{ url_for("design_place") }}'; }, 500);
       return;
     }
     const stage = d.stage ? d.stage[0].toUpperCase() + d.stage.slice(1) : 'Working';

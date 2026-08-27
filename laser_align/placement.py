@@ -19,12 +19,18 @@ last step, for LightBurn's own axis setup.
 """
 import math
 
+import cv2
+import numpy as np
+from PIL import Image
 from shapely.geometry import LineString, Polygon
 from shapely.geometry.base import BaseMultipartGeometry
 
 from .align import AlignedDesign, _design_paths_and_bbox, _flatten_path, MM_PER_PX
 
 DEFAULT_SAFETY_MARGIN_MM = 1.5
+DEFAULT_TRACE_LONG_MM = 100.0   # a traced raster has no real-world size; start it this
+                                # big on its longer side, then the editor / fit-to-piece
+                                # rescales.
 
 Polyline = list[tuple[float, float]]
 
@@ -49,6 +55,53 @@ def load_svg_mm(svg_path: str) -> tuple[list[Polyline], float, float]:
     if not polylines:
         raise ValueError("SVG has no drawable paths.")
     return polylines, w_mm, h_mm
+
+
+def trace_image_to_mm(
+    cutout: Image.Image, long_side_mm: float = DEFAULT_TRACE_LONG_MM
+) -> tuple[list[Polyline], float, float]:
+    """Trace a background-removed RGBA image to millimetre polylines centred
+    on the origin. Traces the dark 'ink' inside the subject (for line art /
+    black-on-white designs); if there is no ink to speak of, falls back to
+    the subject's silhouette. Returns (polylines, width_mm, height_mm)."""
+    rgba = np.array(cutout.convert("RGBA"))
+    alpha = rgba[:, :, 3]
+    gray = cv2.cvtColor(rgba[:, :, :3], cv2.COLOR_RGB2GRAY)
+
+    subject = alpha > 128
+    _, ink = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    ink = (ink > 0) & subject
+    if ink.mean() < 0.005:                      # basically no dark lines -> use the outline
+        ink = subject
+    mask = (ink.astype(np.uint8)) * 255
+
+    contours, _ = cv2.findContours(mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+    h, w = mask.shape
+    min_len = max(8.0, 0.004 * (w + h))         # drop specks
+    polys_px: list[Polyline] = []
+    for c in contours:
+        if cv2.arcLength(c, True) < min_len:
+            continue
+        approx = cv2.approxPolyDP(c, 1.2, True).reshape(-1, 2)
+        if len(approx) < 2:
+            continue
+        line = [(float(x), float(y)) for x, y in approx]
+        line.append(line[0])                    # close it
+        polys_px.append(line)
+    if not polys_px:
+        raise ValueError("Nothing to trace - the image came out blank after background removal.")
+
+    xs = [x for line in polys_px for x, _ in line]
+    ys = [y for line in polys_px for _, y in line]
+    bw, bh = max(xs) - min(xs), max(ys) - min(ys)
+    cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+    scale = long_side_mm / max(bw, bh, 1.0)
+
+    polylines = [
+        [((x - cx) * scale, -(y - cy) * scale) for x, y in line]   # negate Y: image down -> machine up
+        for line in polys_px
+    ]
+    return polylines, bw * scale, bh * scale
 
 
 def place(

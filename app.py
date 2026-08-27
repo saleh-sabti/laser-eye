@@ -15,6 +15,14 @@ import cv2
 import numpy as np
 from flask import Flask, Response, render_template, request, redirect, url_for, send_file, flash, jsonify
 
+# OpenCV's internal thread pool can deadlock when cv2 calls are made from a
+# Python worker thread after cv2 has been used on the main thread (camera
+# reads, detection) - which is exactly what the photo-trace job does. Seen
+# here: background removal finished, then cv2.findContours in the worker
+# thread hung forever. Disabling OpenCV's own parallelism fixes it; the ops
+# involved are fast enough single-threaded.
+cv2.setNumThreads(0)
+
 from laser_align import config, calibration, detection, align, export, photo_align, dataset, rfdetr_detect, grbl, aruco_calibration, placement
 from laser_align.camera import Camera, probe_devices
 from laser_align.calibration import CalibrationError
@@ -431,6 +439,8 @@ _place_polylines: list | None = None          # design polylines, mm, centred on
 _place_size_mm: tuple[float, float] | None = None
 _place_bed_jpg: bytes | None = None           # frozen bed photo the editor draws on
 _place_detection: detection.Detection | None = None
+_place_cutout = None                           # PIL image from a photo upload, traced lazily
+_place_cutout_long_mm: float | None = None
 
 # Photo processing runs on a background thread so the page can show a
 # progress bar - rembg's background removal is one blocking call of a few
@@ -442,23 +452,25 @@ _photo_job_lock = threading.Lock()
 _photo_avg_s = 8.0
 
 _PHOTO_STAGES = [
-    ("removing background", 0.05, 0.80),   # (label, pct_start, pct_end)
-    ("aligning to the piece", 0.80, 0.95),
+    ("removing background", 0.05, 0.92),   # (label, pct_start, pct_end)
 ]
 
 
-def _run_photo_job(photo_bytes: bytes, det: "detection.Detection") -> None:
+def _run_photo_job(photo_bytes: bytes, frame_jpg: bytes, det: "detection.Detection") -> None:
+    """Background-remove a raster upload. Only the rembg call runs here -
+    the cv2 trace is done later in the request thread (`design_place`),
+    because cv2.findContours in this daemon thread deadlocks once torch is
+    loaded in the process (rfdetr detection method). Hands the cutout to the
+    editor via module globals."""
     global _photo_job, _photo_avg_s
+    global _place_cutout, _place_cutout_long_mm, _place_bed_jpg, _place_detection
+    global _place_polylines, _last_export_path
     t0 = time.time()
     try:
         with _photo_job_lock:
             _photo_job.update(stage="removing background", stage_i=0, t0=t0)
-        aligned_photo = photo_align.align_photo(photo_bytes, det)
-        with _photo_job_lock:
-            _photo_job.update(stage="aligning to the piece", stage_i=1)
-        out_path = str(Path(tempfile.gettempdir()) / "laser_align_export.png")
-        photo_align.save_png(aligned_photo, out_path)
-    except Exception as e:  # ValueError from align, or anything rembg throws
+        cutout = photo_align._autocrop_to_subject(photo_align.remove_background(photo_bytes))
+    except Exception as e:
         with _photo_job_lock:
             _photo_job.update(state="error", error=str(e), done=True)
         return
@@ -466,18 +478,16 @@ def _run_photo_job(photo_bytes: bytes, det: "detection.Detection") -> None:
     took = time.time() - t0
     _photo_avg_s = 0.7 * _photo_avg_s + 0.3 * max(took, 1.0)
 
-    global _last_export_path, _last_export_kind, _last_placement_info
-    _last_export_path = out_path
-    _last_export_kind = "png"
-    _last_placement_info = {
-        "target_x_mm": round(aligned_photo.target_x_mm, 1),
-        "target_y_mm": round(aligned_photo.target_y_mm, 1),
-        "angle_deg": round(aligned_photo.angle_deg, 1),
-        "width_mm": round(aligned_photo.width_mm, 1),
-        "height_mm": round(aligned_photo.height_mm, 1),
-    }
+    _place_cutout = cutout
+    _place_cutout_long_mm = (max(det.length_mm, det.width_mm)
+                             if det is not None else placement.DEFAULT_TRACE_LONG_MM)
+    _place_detection = det
+    _place_bed_jpg = frame_jpg
+    _place_polylines = None
+    _last_export_path = None
     with _photo_job_lock:
-        _photo_job.update(state="done", done=True, took_s=round(took, 1))
+        _photo_job.update(state="done", done=True, took_s=round(took, 1),
+                          redirect=url_for("design_place"))
 
 
 def _photo_job_progress() -> dict:
@@ -492,10 +502,13 @@ def _photo_job_progress() -> dict:
         return {
             "state": j["state"], "pct": pct, "error": j.get("error"),
             "stage": j.get("stage", ""), "elapsed_s": round(time.time() - j["t0"], 1),
-            "placement": _last_placement_info if j.get("state") == "done" else None,
-            "download_url": url_for("design_export") if j.get("state") == "done" else None,
+            "redirect": j.get("redirect"),
         }
     elapsed = time.time() - j["t0"]
+    if elapsed > max(150.0, 8 * _photo_avg_s):   # watchdog - don't let the UI hang forever
+        return {"state": "error", "error":
+                f"Timed out after {elapsed:.0f}s - the design may be too complex, or "
+                "background removal stalled. Try a simpler image."}
     lo, hi = _PHOTO_STAGES[j.get("stage_i", 0)][1], _PHOTO_STAGES[j.get("stage_i", 0)][2]
     frac = 1.0 - math.exp(-elapsed / max(_photo_avg_s, 1.0))   # eases toward 1, never reaches
     pct = round(100 * (lo + (hi - lo) * frac))
@@ -547,9 +560,10 @@ def design_page():
                 return jsonify({"ok": False, "error":
                     "Photo alignment needs the workpiece detected - check the reference frame and bed."})
             photo_bytes = design_file.read()
+            ok, buf = cv2.imencode(".jpg", frame)
             with _photo_job_lock:
                 _photo_job = {"state": "queued", "t0": time.time(), "stage": "starting", "stage_i": 0}
-            threading.Thread(target=_run_photo_job, args=(photo_bytes, det), daemon=True).start()
+            threading.Thread(target=_run_photo_job, args=(photo_bytes, buf.tobytes(), det), daemon=True).start()
             return jsonify({"ok": True, "photo_job": True})
 
         return jsonify({"ok": False, "error": f"Unsupported file type '{ext}' - use .svg, .png, or .jpg."})
@@ -571,8 +585,22 @@ def design_photo_status():
 
 @app.route("/design/place")
 def design_place():
+    global _place_polylines, _place_size_mm, _place_cutout
+    # A photo upload leaves a cutout to be traced - do it here, in the
+    # request thread (cv2.findContours deadlocks in the upload's daemon
+    # thread once torch is loaded in the process).
+    if _place_polylines is None and _place_cutout is not None:
+        try:
+            polylines, w_mm, h_mm = placement.trace_image_to_mm(
+                _place_cutout, long_side_mm=_place_cutout_long_mm or placement.DEFAULT_TRACE_LONG_MM)
+        except ValueError as e:
+            _place_cutout = None
+            flash(f"Couldn't trace that image: {e}")
+            return redirect(url_for("design_page"))
+        _place_polylines, _place_size_mm, _place_cutout = polylines, (w_mm, h_mm), None
+
     if _place_polylines is None:
-        flash("Upload an SVG design first.")
+        flash("Upload a design first.")
         return redirect(url_for("design_page"))
     return render_template("design_editor.html", grbl_connected=_grbl is not None)
 

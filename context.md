@@ -542,9 +542,26 @@ state lives in module globals (`_place_polylines` etc.), like the rest of app.py
 the homography even though this machine's X is vertical / inverted in the image), numeric
 fields, export round-trip, download. Rendered correctly on the real bed photo.
 
-**Still to do**: one test SVG import into LightBurn to settle `flip_y`; the photo/raster
-path in the editor + its LaserGRBL position card; PNG-line-art -> SVG tracing; the
-background-removal rework.
+**Photos now go through the editor too (2026-08-28)**: a PNG/JPEG upload runs
+background removal on a thread (progress bar via `/design/photo_status`), then
+`placement.trace_image_to_mm` traces the cutout's dark ink (or its silhouette if there's
+no ink) to polylines that feed the *same* editor as an SVG. The old one-shot photo flow
+(rembg -> align -> report a target position) is gone - it auto-scaled screenshots to
+absurd sizes (a user saw 231x414mm) and had no placement.
+
+**Real bug found doing this**: `cv2.findContours` in the upload's daemon thread hung
+forever (background removal finished, tracing never did) - OpenCV's thread pool
+deadlocks against torch's OpenMP once `rfdetr` has pulled torch into the process.
+`cv2.setNumThreads(0)` at startup helped but didn't fully fix it; the reliable fix was
+to keep **only** rembg in the daemon thread and do the cv2 trace lazily in the
+`/design/place` request thread (request threads run cv2 fine - Live View's marker
+detection already does). Also added a watchdog in `_photo_job_progress` (error out after
+`max(150s, 8*avg)`) so a stall can't hang the UI.
+
+**Still to do**: one test SVG import into LightBurn to settle `flip_y`; raster export +
+LaserGRBL position card (right now a traced photo exports as SVG line work, same as any
+design); the edge-quality part of the background-removal rework (binarize/largest-
+component/brush).
 
 ## Planned next: placement editor + background-removal rework (2026-08-27)
 
